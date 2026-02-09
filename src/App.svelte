@@ -12,6 +12,7 @@
   let loading = $state(false);
   let errorDebug = $state(null);
   let activeTab = $state('body');
+  let responseDuration = $state(null);
   let drawerOpen = $state(false);
   let drawerRef = $state(null);
 
@@ -147,6 +148,7 @@
     responseStatus = null;
     responseHeaders = '';
     activeTab = 'body';
+    responseDuration = null;
 
     const opts = {
       method,
@@ -174,6 +176,7 @@
     try {
       const res = await fetch(url, opts);
       const durationMs = Math.round(performance.now() - startTime);
+      responseDuration = durationMs;
 
       responseStatus = {
         code: res.status,
@@ -221,6 +224,7 @@
       }
     } catch (err) {
       const durationMs = Math.round(performance.now() - startTime);
+      responseDuration = durationMs;
       let preflightDebug = '';
       const isCorsLikely = err instanceof TypeError;
 
@@ -431,8 +435,13 @@
           <div class="section">
             <div class="section-header">
               <span class="section-title">Response</span>
-              <span class="status-badge" class:status-ok={responseStatus.ok} class:status-err={!responseStatus.ok}>
-                {responseStatus.code} {responseStatus.text}
+              <span class="response-status-group">
+                {#if responseDuration !== null}
+                  <span class="response-duration">{responseDuration}ms</span>
+                {/if}
+                <span class="status-badge" class:status-ok={responseStatus.ok} class:status-err={!responseStatus.ok}>
+                  {responseStatus.code} {responseStatus.text}
+                </span>
               </span>
             </div>
 
@@ -874,6 +883,18 @@
   .status-err {
     background: rgba(249, 62, 62, 0.15);
     color: #f93e3e;
+  }
+
+  .response-status-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .response-duration {
+    font-size: 0.7rem;
+    color: #8a8a9a;
+    font-family: 'SF Mono', 'Fira Code', monospace;
   }
 
   .response-tabs {

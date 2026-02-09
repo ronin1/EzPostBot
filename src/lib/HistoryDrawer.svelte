@@ -12,7 +12,27 @@
 
   // Pagination
   let page = $state(1);
-  let pageSize = 20;
+  let pageSize = $state(20);
+  const ITEM_HEIGHT = 32; // approx height of one collapsed row in px
+  const MIN_PAGE_SIZE = 5;
+
+  // Container measurement
+  let resultsEl = $state(null);
+
+  $effect(() => {
+    if (!resultsEl) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height;
+        const computed = Math.max(MIN_PAGE_SIZE, Math.floor(h / ITEM_HEIGHT));
+        if (computed !== pageSize) {
+          pageSize = computed;
+        }
+      }
+    });
+    observer.observe(resultsEl);
+    return () => observer.disconnect();
+  });
 
   // Data
   let rows = $state([]);
@@ -30,8 +50,17 @@
     page = 1;
   }
 
+  // Reset to page 1 when pageSize changes (browser resize)
+  let prevPageSize = pageSize;
   $effect(() => {
-    filterMethods; filterUrl; filterStatusMin; filterStatusMax; page; sortDir; open;
+    if (pageSize !== prevPageSize) {
+      prevPageSize = pageSize;
+      page = 1;
+    }
+  });
+
+  $effect(() => {
+    filterMethods; filterUrl; filterStatusMin; filterStatusMax; page; pageSize; sortDir; open;
     refresh();
   });
 
@@ -175,7 +204,7 @@
   </div>
 
   <!-- Results -->
-  <div class="results">
+  <div class="results" bind:this={resultsEl}>
     {#if rows.length === 0}
       <div class="empty">No requests found</div>
     {/if}
