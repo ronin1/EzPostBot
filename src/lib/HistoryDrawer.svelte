@@ -136,6 +136,15 @@
   function truncateUrl(u) {
     return u || '';
   }
+
+  let copiedId = $state(null);
+  async function copyText(text, id) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedId = id;
+      setTimeout(() => { if (copiedId === id) copiedId = null; }, 1500);
+    } catch {}
+  }
 </script>
 
 <div class="panel">
@@ -230,31 +239,56 @@
             {#if row.request_headers}
               <div class="detail-section">
                 <div class="detail-label">Request Headers</div>
-                <pre class="detail-pre">{row.request_headers}</pre>
+                <div class="pre-wrapper">
+                  <button class="copy-btn" onclick={() => copyText(row.request_headers, `rh-${row.id}`)} title="Copy">
+                    {copiedId === `rh-${row.id}` ? '✓' : '⧉'}
+                  </button>
+                  <pre class="detail-pre">{row.request_headers}</pre>
+                </div>
               </div>
             {/if}
             {#if row.request_body}
               <div class="detail-section">
                 <div class="detail-label">Request Body</div>
-                <pre class="detail-pre">{row.request_body}</pre>
+                <div class="pre-wrapper">
+                  <button class="copy-btn" onclick={() => copyText(row.request_body, `rb-${row.id}`)} title="Copy">
+                    {copiedId === `rb-${row.id}` ? '✓' : '⧉'}
+                  </button>
+                  <pre class="detail-pre">{row.request_body}</pre>
+                </div>
               </div>
             {/if}
             {#if row.response_headers}
               <div class="detail-section">
                 <div class="detail-label">Response Headers</div>
-                <pre class="detail-pre">{row.response_headers}</pre>
+                <div class="pre-wrapper">
+                  <button class="copy-btn" onclick={() => copyText(row.response_headers, `resh-${row.id}`)} title="Copy">
+                    {copiedId === `resh-${row.id}` ? '✓' : '⧉'}
+                  </button>
+                  <pre class="detail-pre">{row.response_headers}</pre>
+                </div>
               </div>
             {/if}
             {#if row.response_body}
               <div class="detail-section">
                 <div class="detail-label">Response Body</div>
-                <pre class="detail-pre">{row.response_body}</pre>
+                <div class="pre-wrapper">
+                  <button class="copy-btn" onclick={() => copyText(row.response_body, `resb-${row.id}`)} title="Copy">
+                    {copiedId === `resb-${row.id}` ? '✓' : '⧉'}
+                  </button>
+                  <pre class="detail-pre">{row.response_body}</pre>
+                </div>
               </div>
             {/if}
             {#if row.error}
               <div class="detail-section">
                 <div class="detail-label error-label">Error</div>
-                <pre class="detail-pre error-pre">{row.error}</pre>
+                <div class="pre-wrapper">
+                  <button class="copy-btn" onclick={() => copyText(row.error, `err-${row.id}`)} title="Copy">
+                    {copiedId === `err-${row.id}` ? '✓' : '⧉'}
+                  </button>
+                  <pre class="detail-pre error-pre">{row.error}</pre>
+                </div>
               </div>
             {/if}
             <button class="replay-btn" onclick={() => onReplay(row)}>
@@ -541,6 +575,42 @@
     color: #f93e3e;
   }
 
+  .pre-wrapper {
+    position: relative;
+  }
+
+  .copy-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: #1e1e34;
+    border: 1px solid #333;
+    color: #888;
+    width: 24px;
+    height: 24px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+    z-index: 2;
+    padding: 0;
+    line-height: 1;
+  }
+
+  .pre-wrapper:hover .copy-btn {
+    opacity: 1;
+  }
+
+  .copy-btn:hover {
+    color: #fff;
+    border-color: #646cff;
+    background: #252540;
+  }
+
   .detail-pre {
     background: #16162a;
     border: 1px solid #2a2a3e;
@@ -550,8 +620,11 @@
     font-size: 0.65rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
     overflow-x: auto;
-    max-height: 120px;
+    min-height: 40px;
+    max-height: 500px;
+    height: 120px;
     overflow-y: auto;
+    resize: vertical;
     white-space: pre-wrap;
     word-break: break-word;
     color: #bbb;
@@ -691,6 +764,17 @@
       background: #f0f0f5;
       border-color: #ddd;
       color: #444;
+    }
+
+    .copy-btn {
+      background: #e8e8f0;
+      border-color: #ccc;
+      color: #666;
+    }
+
+    .copy-btn:hover {
+      background: #dddde8;
+      color: #333;
     }
 
     .panel-footer {

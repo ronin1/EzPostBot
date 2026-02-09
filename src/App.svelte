@@ -13,6 +13,16 @@
   let errorDebug = $state(null);
   let activeTab = $state('body');
   let responseDuration = $state(null);
+  let copiedPanel = $state(null);
+
+  async function copyPanelText(text, id) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedPanel = id;
+      setTimeout(() => { if (copiedPanel === id) copiedPanel = null; }, 1500);
+    } catch {}
+  }
+
   let drawerOpen = $state(false);
   let drawerRef = $state(null);
 
@@ -459,9 +469,19 @@
             </div>
 
             {#if activeTab === 'body'}
-              <pre class="response-body">{response || '(empty response)'}</pre>
+              <div class="response-pre-wrapper">
+                <button class="response-copy-btn" onclick={() => copyPanelText(response || '', 'body')} title="Copy">
+                  {copiedPanel === 'body' ? '✓' : '⧉'}
+                </button>
+                <pre class="response-body">{response || '(empty response)'}</pre>
+              </div>
             {:else}
-              <pre class="response-body">{responseHeaders || '(no headers)'}</pre>
+              <div class="response-pre-wrapper">
+                <button class="response-copy-btn" onclick={() => copyPanelText(responseHeaders || '', 'headers')} title="Copy">
+                  {copiedPanel === 'headers' ? '✓' : '⧉'}
+                </button>
+                <pre class="response-body">{responseHeaders || '(no headers)'}</pre>
+              </div>
             {/if}
           </div>
         {/if}
@@ -924,6 +944,42 @@
   .tab-btn.active {
     color: #646cff;
     border-bottom-color: #646cff;
+  }
+
+  .response-pre-wrapper {
+    position: relative;
+  }
+
+  .response-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #252540;
+    border: 1px solid #444;
+    color: #888;
+    width: 28px;
+    height: 28px;
+    font-size: 0.85rem;
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+    z-index: 2;
+    padding: 0;
+    line-height: 1;
+  }
+
+  .response-pre-wrapper:hover .response-copy-btn {
+    opacity: 1;
+  }
+
+  .response-copy-btn:hover {
+    color: #fff;
+    border-color: #646cff;
+    background: #2a2a50;
   }
 
   .response-body {
