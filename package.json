@@ -4,13 +4,22 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n api,vite -c blue,green \"nodemon server.js\" \"vite\"",
+    "dev:debug": "concurrently -n api,vite -c blue,green \"nodemon server.js\" \"vite --port 8099 --strictPort\"",
     "build": "vite build",
+    "start": "node server.js",
     "preview": "vite preview"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.11",
     "svelte": "^5.45.2",
     "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
   }
 }

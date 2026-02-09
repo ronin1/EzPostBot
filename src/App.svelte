@@ -1,4 +1,7 @@
 <script>
+  import { saveRequest } from './lib/db.js';
+  import HistoryDrawer from './lib/HistoryDrawer.svelte';
+
   let url = $state('https://io.dev.clarityrcm.com/api/peripheral/health');
   let method = $state('GET');
   let body = $state('');
@@ -9,6 +12,8 @@
   let loading = $state(false);
   let errorDebug = $state(null);
   let activeTab = $state('body');
+  let drawerOpen = $state(false);
+  let drawerRef = $state(null);
 
   const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
   const showBody = $derived(method === 'POST' || method === 'PUT' || method === 'PATCH');
@@ -141,9 +146,15 @@
     }
 
     const requestDebug = buildRequestDebug(url, opts);
+    const requestHeadersStr = Object.keys(opts.headers).length > 0
+      ? Object.entries(opts.headers).map(([k, v]) => `${k}: ${v}`).join('\n')
+      : '';
+    const startTime = performance.now();
 
     try {
       const res = await fetch(url, opts);
+      const durationMs = Math.round(performance.now() - startTime);
+
       responseStatus = {
         code: res.status,
         text: res.statusText,
@@ -165,6 +176,22 @@
         response = await res.text();
       }
 
+      // Save to database
+      await saveRequest({
+        timestamp: new Date().toISOString(),
+        method,
+        url,
+        requestHeaders: requestHeadersStr,
+        requestBody: opts.body || '',
+        responseStatus: res.status,
+        responseStatusText: res.statusText,
+        responseHeaders,
+        responseBody: response,
+        error: null,
+        durationMs,
+      });
+      drawerRef?.refresh();
+
       // If HTTP error (4xx/5xx), also populate errorDebug with full info
       if (!res.ok) {
         activeTab = 'response';
@@ -176,6 +203,8 @@
         };
       }
     } catch (err) {
+      const durationMs = Math.round(performance.now() - startTime);
+
       // Network / CORS / TypeError — fetch threw entirely
       let preflightDebug = '';
       const isCorsLikely = err instanceof TypeError;
@@ -197,6 +226,22 @@
         diagLines.push('Check the browser DevTools Console & Network tab for more details.');
       }
 
+      // Save error to database
+      await saveRequest({
+        timestamp: new Date().toISOString(),
+        method,
+        url,
+        requestHeaders: requestHeadersStr,
+        requestBody: opts.body || '',
+        responseStatus: null,
+        responseStatusText: null,
+        responseHeaders: null,
+        responseBody: null,
+        error: `${err.name}: ${err.message}`,
+        durationMs,
+      });
+      drawerRef?.refresh();
+
       activeTab = preflightDebug ? 'preflight' : 'request';
       errorDebug = {
         message: `${err.name}: ${err.message}`,
@@ -214,14 +259,42 @@
       sendRequest();
     }
   }
+
+  function handleReplay(row) {
+    method = row.method;
+    url = row.url;
+    if (row.request_headers) {
+      headers = row.request_headers.split('\n').filter(Boolean).map((line) => {
+        const idx = line.indexOf(':');
+        return { key: line.slice(0, idx).trim(), value: line.slice(idx + 1).trim() };
+      });
+    } else {
+      headers = [];
+    }
+    body = row.request_body || '';
+    drawerOpen = false;
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
+<HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} />
+
 <main>
   <div class="app-header">
-    <h1>API Client</h1>
-    <p class="subtitle">Test API endpoints directly from your browser</p>
+    <div class="app-header-row">
+      <button class="history-toggle" onclick={() => drawerOpen = !drawerOpen} title="Request History">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        History
+      </button>
+      <div>
+        <h1>API Client</h1>
+        <p class="subtitle">Test API endpoints directly from your browser</p>
+      </div>
+    </div>
   </div>
 
   <div class="request-bar">
@@ -371,6 +444,12 @@
     margin-bottom: 2rem;
   }
 
+  .app-header-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
   .app-header h1 {
     font-size: 1.75rem;
     margin: 0 0 0.25rem 0;
@@ -382,6 +461,28 @@
     margin: 0;
     color: #888;
     font-size: 0.9rem;
+  }
+
+  .history-toggle {
+    background: #1a1a2e;
+    border: 1px solid #333;
+    color: #aaa;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+    margin-top: 0.25rem;
+  }
+
+  .history-toggle:hover {
+    border-color: #646cff;
+    color: #fff;
   }
 
   /* Request bar */
@@ -794,6 +895,12 @@
     kbd {
       background: #eee;
       border-color: #ccc;
+    }
+
+    .history-toggle {
+      background: #f0f0f5;
+      border-color: #ddd;
+      color: #555;
     }
   }
 </style>

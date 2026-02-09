@@ -3,5 +3,7 @@ services:
     build: .
     container_name: test-ui
     ports:
-      - "8099:80"
+      - "8099:3001"
+    volumes:
+      - ./data:/app/data
     restart: unless-stopped
