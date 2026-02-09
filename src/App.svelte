@@ -1,5 +1,5 @@
 <script>
-  let url = $state('https://jsonplaceholder.typicode.com/posts/1');
+  let url = $state('https://io.dev.clarityrcm.com/api/peripheral/health');
   let method = $state('GET');
   let body = $state('');
   let headers = $state([]);
@@ -7,7 +7,7 @@
   let responseStatus = $state(null);
   let responseHeaders = $state('');
   let loading = $state(false);
-  let error = $state(null);
+  let errorDebug = $state(null);
   let activeTab = $state('body');
 
   const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
@@ -34,17 +34,92 @@
     return colors[m] || '#61affe';
   }
 
+  /** Build a snapshot of the outgoing request for debug display */
+  function buildRequestDebug(requestUrl, opts) {
+    const lines = [];
+    lines.push(`${opts.method} ${requestUrl}`);
+    lines.push('');
+    lines.push('--- Request Headers ---');
+    const h = opts.headers || {};
+    const keys = Object.keys(h);
+    if (keys.length === 0) {
+      lines.push('(none)');
+    } else {
+      for (const k of keys) {
+        lines.push(`${k}: ${h[k]}`);
+      }
+    }
+    if (opts.body) {
+      lines.push('');
+      lines.push('--- Request Body ---');
+      lines.push(opts.body);
+    }
+    return lines.join('\n');
+  }
+
+  /** Try a manual OPTIONS preflight and return debug info */
+  async function probePreflight(requestUrl, opts) {
+    const lines = [];
+    lines.push('--- Preflight Probe (OPTIONS) ---');
+    lines.push(`OPTIONS ${requestUrl}`);
+    lines.push('');
+    try {
+      // Use no-cors first to see if the server is reachable at all
+      const probe = await fetch(requestUrl, {
+        method: 'OPTIONS',
+        mode: 'cors',
+        headers: opts.headers || {},
+      });
+      lines.push(`Status: ${probe.status} ${probe.statusText}`);
+      lines.push('');
+      lines.push('--- Preflight Response Headers ---');
+      let hasHeaders = false;
+      probe.headers.forEach((value, key) => {
+        lines.push(`${key}: ${value}`);
+        hasHeaders = true;
+      });
+      if (!hasHeaders) {
+        lines.push('(no headers exposed — browser may be blocking them)');
+      }
+
+      // Check for critical CORS headers
+      lines.push('');
+      lines.push('--- CORS Header Analysis ---');
+      const acao = probe.headers.get('access-control-allow-origin');
+      const acam = probe.headers.get('access-control-allow-methods');
+      const acah = probe.headers.get('access-control-allow-headers');
+      lines.push(`Access-Control-Allow-Origin: ${acao || '(missing)'}`);
+      lines.push(`Access-Control-Allow-Methods: ${acam || '(missing)'}`);
+      lines.push(`Access-Control-Allow-Headers: ${acah || '(missing)'}`);
+
+      if (!acao) {
+        lines.push('');
+        lines.push('⚠ Server did not return Access-Control-Allow-Origin.');
+        lines.push('  The browser will block the response.');
+      }
+    } catch (probeErr) {
+      lines.push(`Preflight probe also failed: ${probeErr.name}: ${probeErr.message}`);
+      lines.push('');
+      lines.push('This usually means:');
+      lines.push('  • The server is unreachable (DNS, network, firewall)');
+      lines.push('  • The server does not respond to OPTIONS requests');
+      lines.push('  • A browser extension is interfering');
+    }
+    return lines.join('\n');
+  }
+
   async function sendRequest() {
     if (!url.trim()) {
-      error = 'Please enter a URL';
+      errorDebug = { message: 'Please enter a URL', request: '', preflight: '', response: '' };
       return;
     }
 
     loading = true;
-    error = null;
+    errorDebug = null;
     response = null;
     responseStatus = null;
     responseHeaders = '';
+    activeTab = 'body';
 
     const opts = {
       method,
@@ -64,6 +139,8 @@
       opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
       opts.body = body;
     }
+
+    const requestDebug = buildRequestDebug(url, opts);
 
     try {
       const res = await fetch(url, opts);
@@ -87,8 +164,46 @@
       } else {
         response = await res.text();
       }
+
+      // If HTTP error (4xx/5xx), also populate errorDebug with full info
+      if (!res.ok) {
+        activeTab = 'response';
+        errorDebug = {
+          message: `HTTP ${res.status} ${res.statusText}`,
+          request: requestDebug,
+          preflight: '',
+          response: `--- Response Status ---\n${res.status} ${res.statusText}\n\n--- Response Headers ---\n${responseHeaders}\n\n--- Response Body ---\n${response || '(empty)'}`,
+        };
+      }
     } catch (err) {
-      error = `Request failed: ${err.message}`;
+      // Network / CORS / TypeError — fetch threw entirely
+      let preflightDebug = '';
+      const isCorsLikely = err instanceof TypeError;
+
+      if (isCorsLikely) {
+        preflightDebug = await probePreflight(url, opts);
+      }
+
+      const diagLines = [];
+      diagLines.push(`${err.name}: ${err.message}`);
+      if (isCorsLikely) {
+        diagLines.push('');
+        diagLines.push('Likely causes:');
+        diagLines.push('  1. CORS: Server does not include the required Access-Control-Allow-* headers');
+        diagLines.push('  2. Network: Server is unreachable (DNS failure, timeout, refused connection)');
+        diagLines.push('  3. Mixed content: HTTPS page requesting HTTP resource');
+        diagLines.push('  4. Certificate: SSL/TLS certificate error on the target server');
+        diagLines.push('');
+        diagLines.push('Check the browser DevTools Console & Network tab for more details.');
+      }
+
+      activeTab = preflightDebug ? 'preflight' : 'request';
+      errorDebug = {
+        message: `${err.name}: ${err.message}`,
+        request: requestDebug,
+        preflight: preflightDebug,
+        response: diagLines.join('\n'),
+      };
     } finally {
       loading = false;
     }
@@ -178,14 +293,39 @@
     </div>
   {/if}
 
-  <!-- Response Section -->
-  {#if error}
+  <!-- Error Debug Panel -->
+  {#if errorDebug}
     <div class="section">
-      <div class="error-box">{error}</div>
+      <div class="error-box">
+        <div class="error-title">{errorDebug.message}</div>
+      </div>
+      <div class="debug-panel">
+        <div class="debug-tabs">
+          <button class="debug-tab" class:active={activeTab === 'request'} onclick={() => activeTab = 'request'}>
+            Request
+          </button>
+          {#if errorDebug.preflight}
+            <button class="debug-tab" class:active={activeTab === 'preflight'} onclick={() => activeTab = 'preflight'}>
+              Preflight
+            </button>
+          {/if}
+          <button class="debug-tab" class:active={activeTab === 'response'} onclick={() => activeTab = 'response'}>
+            Response / Diagnosis
+          </button>
+        </div>
+        {#if activeTab === 'request'}
+          <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
+        {:else if activeTab === 'preflight'}
+          <pre class="debug-body">{errorDebug.preflight}</pre>
+        {:else}
+          <pre class="debug-body">{errorDebug.response || '(no response)'}</pre>
+        {/if}
+      </div>
     </div>
   {/if}
 
-  {#if responseStatus}
+  <!-- Success Response Section -->
+  {#if responseStatus && !errorDebug}
     <div class="section">
       <div class="section-header">
         <span class="section-title">Response</span>
@@ -456,9 +596,64 @@
     border: 1px solid #f93e3e44;
     color: #f93e3e;
     padding: 0.75rem 1rem;
-    border-radius: 8px;
+    border-radius: 8px 8px 0 0;
     font-size: 0.85rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .error-title {
+    font-weight: 600;
+  }
+
+  .debug-panel {
+    border: 1px solid #f93e3e44;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    overflow: hidden;
+  }
+
+  .debug-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #333;
+    background: rgba(249, 62, 62, 0.04);
+  }
+
+  .debug-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 0;
+  }
+
+  .debug-tab:hover {
+    color: #ccc;
+  }
+
+  .debug-tab.active {
+    color: #f93e3e;
+    border-bottom-color: #f93e3e;
+  }
+
+  .debug-body {
+    background: #1a1a2e;
+    padding: 1rem;
+    margin: 0;
+    font-size: 0.78rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #ccc;
   }
 
   /* Response */
@@ -580,6 +775,20 @@
 
     .error-box {
       background: rgba(249, 62, 62, 0.05);
+    }
+
+    .debug-panel {
+      border-color: #f93e3e33;
+    }
+
+    .debug-tabs {
+      border-bottom-color: #ddd;
+      background: rgba(249, 62, 62, 0.03);
+    }
+
+    .debug-body {
+      background: #f5f5fa;
+      color: #333;
     }
 
     kbd {
