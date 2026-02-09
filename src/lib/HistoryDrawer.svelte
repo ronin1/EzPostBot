@@ -104,9 +104,8 @@
     }
   }
 
-  function truncateUrl(u, max = 45) {
-    if (!u) return '';
-    return u.length > max ? u.slice(0, max) + '...' : u;
+  function truncateUrl(u) {
+    return u || '';
   }
 </script>
 
@@ -426,7 +425,7 @@
 
   .item-summary {
     display: grid;
-    grid-template-columns: 50px 1fr auto auto 24px;
+    grid-template-columns: 50px minmax(0, 1fr) auto auto 24px;
     gap: 0.35rem;
     align-items: center;
     padding: 0.45rem 1rem;
