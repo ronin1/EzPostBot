@@ -15,8 +15,32 @@
   let drawerOpen = $state(false);
   let drawerRef = $state(null);
 
+  // Resize state
+  let drawerWidth = $state(340);
+  let isResizing = $state(false);
+
+  const MIN_DRAWER = 260;
   const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
   const showBody = $derived(method === 'POST' || method === 'PUT' || method === 'PATCH');
+
+  function startResize(e) {
+    e.preventDefault();
+    isResizing = true;
+
+    function onMouseMove(e) {
+      const maxWidth = window.innerWidth * 0.7;
+      drawerWidth = Math.min(maxWidth, Math.max(MIN_DRAWER, e.clientX));
+    }
+
+    function onMouseUp() {
+      isResizing = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    }
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }
 
   function addHeader() {
     headers = [...headers, { key: '', value: '' }];
@@ -69,7 +93,6 @@
     lines.push(`OPTIONS ${requestUrl}`);
     lines.push('');
     try {
-      // Use no-cors first to see if the server is reachable at all
       const probe = await fetch(requestUrl, {
         method: 'OPTIONS',
         mode: 'cors',
@@ -87,7 +110,6 @@
         lines.push('(no headers exposed — browser may be blocking them)');
       }
 
-      // Check for critical CORS headers
       lines.push('');
       lines.push('--- CORS Header Analysis ---');
       const acao = probe.headers.get('access-control-allow-origin');
@@ -99,16 +121,16 @@
 
       if (!acao) {
         lines.push('');
-        lines.push('⚠ Server did not return Access-Control-Allow-Origin.');
+        lines.push('Warning: Server did not return Access-Control-Allow-Origin.');
         lines.push('  The browser will block the response.');
       }
     } catch (probeErr) {
       lines.push(`Preflight probe also failed: ${probeErr.name}: ${probeErr.message}`);
       lines.push('');
       lines.push('This usually means:');
-      lines.push('  • The server is unreachable (DNS, network, firewall)');
-      lines.push('  • The server does not respond to OPTIONS requests');
-      lines.push('  • A browser extension is interfering');
+      lines.push('  - The server is unreachable (DNS, network, firewall)');
+      lines.push('  - The server does not respond to OPTIONS requests');
+      lines.push('  - A browser extension is interfering');
     }
     return lines.join('\n');
   }
@@ -132,14 +154,12 @@
       headers: {},
     };
 
-    // Add custom headers
     for (const h of headers) {
       if (h.key.trim()) {
         opts.headers[h.key.trim()] = h.value;
       }
     }
 
-    // Add body for methods that support it
     if (showBody && body.trim()) {
       opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
       opts.body = body;
@@ -161,7 +181,6 @@
         ok: res.ok,
       };
 
-      // Collect response headers
       const headerLines = [];
       res.headers.forEach((value, key) => {
         headerLines.push(`${key}: ${value}`);
@@ -176,7 +195,6 @@
         response = await res.text();
       }
 
-      // Save to database
       await saveRequest({
         timestamp: new Date().toISOString(),
         method,
@@ -192,7 +210,6 @@
       });
       drawerRef?.refresh();
 
-      // If HTTP error (4xx/5xx), also populate errorDebug with full info
       if (!res.ok) {
         activeTab = 'response';
         errorDebug = {
@@ -204,8 +221,6 @@
       }
     } catch (err) {
       const durationMs = Math.round(performance.now() - startTime);
-
-      // Network / CORS / TypeError — fetch threw entirely
       let preflightDebug = '';
       const isCorsLikely = err instanceof TypeError;
 
@@ -226,7 +241,6 @@
         diagLines.push('Check the browser DevTools Console & Network tab for more details.');
       }
 
-      // Save error to database
       await saveRequest({
         timestamp: new Date().toISOString(),
         method,
@@ -272,176 +286,258 @@
       headers = [];
     }
     body = row.request_body || '';
-    drawerOpen = false;
   }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
-<HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} />
-
-<main>
-  <div class="app-header">
-    <div class="app-header-row">
-      <button class="history-toggle" onclick={() => drawerOpen = !drawerOpen} title="Request History">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <polyline points="12 6 12 12 16 14"/>
-        </svg>
-        History
-      </button>
-      <div>
-        <h1>API Client</h1>
-        <p class="subtitle">Test API endpoints directly from your browser</p>
-      </div>
+<div class="app-layout" class:resizing={isResizing}>
+  {#if drawerOpen}
+    <div class="drawer-pane" style="width: {drawerWidth}px; min-width: {MIN_DRAWER}px">
+      <HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} />
     </div>
-  </div>
-
-  <div class="request-bar">
-    <select bind:value={method} class="method-select" style="color: {getMethodColor(method)}">
-      {#each methods as m}
-        <option value={m} style="color: {getMethodColor(m)}">{m}</option>
-      {/each}
-    </select>
-    <input
-      type="text"
-      bind:value={url}
-      placeholder="Enter request URL..."
-      class="url-input"
-    />
-    <button class="send-btn" onclick={sendRequest} disabled={loading}>
-      {#if loading}
-        <span class="spinner"></span> Sending...
-      {:else}
-        Send
-      {/if}
-    </button>
-  </div>
-
-  <!-- Headers Section -->
-  <div class="section">
-    <div class="section-header">
-      <span class="section-title">Headers</span>
-      <button class="add-header-btn" onclick={addHeader}>
-        + Add Header
-      </button>
-    </div>
-    {#if headers.length > 0}
-      <div class="headers-list">
-        {#each headers as header, i}
-          <div class="header-row">
-            <input
-              type="text"
-              bind:value={header.key}
-              placeholder="Header name"
-              class="header-input key-input"
-            />
-            <input
-              type="text"
-              bind:value={header.value}
-              placeholder="Value"
-              class="header-input value-input"
-            />
-            <button class="remove-btn" onclick={() => removeHeader(i)} title="Remove header">
-              &times;
-            </button>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
-
-  <!-- Body Section (conditional) -->
-  {#if showBody}
-    <div class="section">
-      <div class="section-header">
-        <span class="section-title">Request Body <span class="badge">JSON</span></span>
-      </div>
-      <textarea
-        bind:value={body}
-        placeholder={'{"key": "value"}'}
-        class="body-input"
-        rows="6"
-      ></textarea>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="resize-handle" onmousedown={startResize}>
+      <div class="resize-grip"></div>
     </div>
   {/if}
 
-  <!-- Error Debug Panel -->
-  {#if errorDebug}
-    <div class="section">
-      <div class="error-box">
-        <div class="error-title">{errorDebug.message}</div>
-      </div>
-      <div class="debug-panel">
-        <div class="debug-tabs">
-          <button class="debug-tab" class:active={activeTab === 'request'} onclick={() => activeTab = 'request'}>
-            Request
-          </button>
-          {#if errorDebug.preflight}
-            <button class="debug-tab" class:active={activeTab === 'preflight'} onclick={() => activeTab = 'preflight'}>
-              Preflight
+  <main class="main-pane">
+    <div class="main-scroll">
+      <div class="main-content">
+        <div class="app-header">
+          <div class="app-header-row">
+            <button class="history-toggle" onclick={() => drawerOpen = !drawerOpen} title="Request History">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                {#if drawerOpen}
+                  <polyline points="11 17 6 12 11 7"/>
+                  <polyline points="18 17 13 12 18 7"/>
+                {:else}
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                {/if}
+              </svg>
+              {drawerOpen ? 'Hide' : 'History'}
             </button>
-          {/if}
-          <button class="debug-tab" class:active={activeTab === 'response'} onclick={() => activeTab = 'response'}>
-            Response / Diagnosis
+            <div>
+              <h1>👾 PostBot</h1>
+              <p class="subtitle">Test API endpoints directly from your browser</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="request-bar">
+          <select bind:value={method} class="method-select" style="color: {getMethodColor(method)}">
+            {#each methods as m}
+              <option value={m} style="color: {getMethodColor(m)}">{m}</option>
+            {/each}
+          </select>
+          <input
+            type="text"
+            bind:value={url}
+            placeholder="Enter request URL..."
+            class="url-input"
+          />
+          <button class="send-btn" onclick={sendRequest} disabled={loading}>
+            {#if loading}
+              <span class="spinner"></span> Sending...
+            {:else}
+              Send
+            {/if}
           </button>
         </div>
-        {#if activeTab === 'request'}
-          <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
-        {:else if activeTab === 'preflight'}
-          <pre class="debug-body">{errorDebug.preflight}</pre>
-        {:else}
-          <pre class="debug-body">{errorDebug.response || '(no response)'}</pre>
+
+        <!-- Headers Section -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">Headers</span>
+            <button class="add-header-btn" onclick={addHeader}>
+              + Add Header
+            </button>
+          </div>
+          {#if headers.length > 0}
+            <div class="headers-list">
+              {#each headers as header, i}
+                <div class="header-row">
+                  <input
+                    type="text"
+                    bind:value={header.key}
+                    placeholder="Header name"
+                    class="header-input key-input"
+                  />
+                  <input
+                    type="text"
+                    bind:value={header.value}
+                    placeholder="Value"
+                    class="header-input value-input"
+                  />
+                  <button class="remove-btn" onclick={() => removeHeader(i)} title="Remove header">
+                    &times;
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <!-- Body Section (conditional) -->
+        {#if showBody}
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">Request Body <span class="badge">JSON</span></span>
+            </div>
+            <textarea
+              bind:value={body}
+              placeholder={'{"key": "value"}'}
+              class="body-input"
+              rows="6"
+            ></textarea>
+          </div>
         {/if}
+
+        <!-- Error Debug Panel -->
+        {#if errorDebug}
+          <div class="section">
+            <div class="error-box">
+              <div class="error-title">{errorDebug.message}</div>
+            </div>
+            <div class="debug-panel">
+              <div class="debug-tabs">
+                <button class="debug-tab" class:active={activeTab === 'request'} onclick={() => activeTab = 'request'}>
+                  Request
+                </button>
+                {#if errorDebug.preflight}
+                  <button class="debug-tab" class:active={activeTab === 'preflight'} onclick={() => activeTab = 'preflight'}>
+                    Preflight
+                  </button>
+                {/if}
+                <button class="debug-tab" class:active={activeTab === 'response'} onclick={() => activeTab = 'response'}>
+                  Response / Diagnosis
+                </button>
+              </div>
+              {#if activeTab === 'request'}
+                <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
+              {:else if activeTab === 'preflight'}
+                <pre class="debug-body">{errorDebug.preflight}</pre>
+              {:else}
+                <pre class="debug-body">{errorDebug.response || '(no response)'}</pre>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Success Response Section -->
+        {#if responseStatus && !errorDebug}
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">Response</span>
+              <span class="status-badge" class:status-ok={responseStatus.ok} class:status-err={!responseStatus.ok}>
+                {responseStatus.code} {responseStatus.text}
+              </span>
+            </div>
+
+            <div class="response-tabs">
+              <button
+                class="tab-btn"
+                class:active={activeTab === 'body'}
+                onclick={() => activeTab = 'body'}
+              >Body</button>
+              <button
+                class="tab-btn"
+                class:active={activeTab === 'headers'}
+                onclick={() => activeTab = 'headers'}
+              >Headers</button>
+            </div>
+
+            {#if activeTab === 'body'}
+              <pre class="response-body">{response || '(empty response)'}</pre>
+            {:else}
+              <pre class="response-body">{responseHeaders || '(no headers)'}</pre>
+            {/if}
+          </div>
+        {/if}
+
+        <div class="hint">
+          Press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to send request
+        </div>
       </div>
     </div>
-  {/if}
-
-  <!-- Success Response Section -->
-  {#if responseStatus && !errorDebug}
-    <div class="section">
-      <div class="section-header">
-        <span class="section-title">Response</span>
-        <span class="status-badge" class:status-ok={responseStatus.ok} class:status-err={!responseStatus.ok}>
-          {responseStatus.code} {responseStatus.text}
-        </span>
-      </div>
-
-      <div class="response-tabs">
-        <button
-          class="tab-btn"
-          class:active={activeTab === 'body'}
-          onclick={() => activeTab = 'body'}
-        >Body</button>
-        <button
-          class="tab-btn"
-          class:active={activeTab === 'headers'}
-          onclick={() => activeTab = 'headers'}
-        >Headers</button>
-      </div>
-
-      {#if activeTab === 'body'}
-        <pre class="response-body">{response || '(empty response)'}</pre>
-      {:else}
-        <pre class="response-body">{responseHeaders || '(no headers)'}</pre>
-      {/if}
-    </div>
-  {/if}
-
-  <div class="hint">
-    Press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to send request
-  </div>
-</main>
+  </main>
+</div>
 
 <style>
-  main {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem 1.5rem;
+  /* Layout */
+  .app-layout {
+    display: flex;
+    height: 100vh;
+    width: 100%;
+    overflow: hidden;
   }
 
+  .app-layout.resizing {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  .drawer-pane {
+    flex-shrink: 0;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+  }
+
+  .resize-handle {
+    width: 6px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+
+  .resize-handle:hover,
+  .resizing .resize-handle {
+    background: rgba(100, 108, 255, 0.15);
+  }
+
+  .resize-grip {
+    width: 2px;
+    height: 32px;
+    background: #444;
+    border-radius: 1px;
+    transition: background 0.15s;
+  }
+
+  .resize-handle:hover .resize-grip,
+  .resizing .resize-grip {
+    background: #646cff;
+  }
+
+  .main-pane {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .main-scroll {
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  .main-content {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem 2rem 2rem;
+  }
+
+  /* Header */
   .app-header {
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
   }
 
   .app-header-row {
@@ -451,8 +547,8 @@
   }
 
   .app-header h1 {
-    font-size: 1.75rem;
-    margin: 0 0 0.25rem 0;
+    font-size: 1.5rem;
+    margin: 0 0 0.15rem 0;
     font-weight: 700;
     letter-spacing: -0.02em;
   }
@@ -460,24 +556,24 @@
   .subtitle {
     margin: 0;
     color: #888;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
   }
 
   .history-toggle {
     background: #1a1a2e;
     border: 1px solid #333;
     color: #aaa;
-    padding: 0.45rem 0.75rem;
-    font-size: 0.8rem;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.78rem;
     font-weight: 500;
     border-radius: 8px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
     transition: all 0.2s;
     white-space: nowrap;
-    margin-top: 0.25rem;
+    margin-top: 0.15rem;
   }
 
   .history-toggle:hover {
@@ -493,20 +589,20 @@
     border-radius: 10px;
     overflow: hidden;
     background: #1a1a2e;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.25rem;
   }
 
   .method-select {
     background: #16162a;
     border: none;
-    padding: 0.75rem 1rem;
-    font-size: 0.9rem;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.85rem;
     font-weight: 700;
     font-family: 'SF Mono', 'Fira Code', monospace;
     cursor: pointer;
     border-right: 2px solid #333;
     outline: none;
-    min-width: 100px;
+    min-width: 90px;
     appearance: auto;
   }
 
@@ -514,11 +610,12 @@
     flex: 1;
     background: transparent;
     border: none;
-    padding: 0.75rem 1rem;
-    font-size: 0.95rem;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.9rem;
     color: inherit;
     font-family: 'SF Mono', 'Fira Code', monospace;
     outline: none;
+    min-width: 0;
   }
 
   .url-input::placeholder {
@@ -529,8 +626,8 @@
     background: #646cff;
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    font-size: 0.9rem;
+    padding: 0.65rem 1.25rem;
+    font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
     transition: background 0.2s;
@@ -538,6 +635,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    white-space: nowrap;
   }
 
   .send-btn:hover:not(:disabled) {
@@ -576,7 +674,7 @@
   }
 
   .section-title {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -587,9 +685,9 @@
   }
 
   .badge {
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     background: #333;
-    padding: 0.15rem 0.4rem;
+    padding: 0.12rem 0.35rem;
     border-radius: 4px;
     text-transform: uppercase;
     font-weight: 600;
@@ -601,8 +699,8 @@
     background: transparent;
     color: #646cff;
     border: 1px dashed #646cff;
-    padding: 0.35rem 0.75rem;
-    font-size: 0.8rem;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
     border-radius: 6px;
@@ -616,12 +714,12 @@
   .headers-list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .header-row {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.4rem;
     align-items: center;
   }
 
@@ -629,8 +727,8 @@
     background: #1a1a2e;
     border: 1px solid #333;
     border-radius: 6px;
-    padding: 0.55rem 0.75rem;
-    font-size: 0.85rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.8rem;
     color: inherit;
     font-family: 'SF Mono', 'Fira Code', monospace;
     outline: none;
@@ -643,21 +741,23 @@
 
   .key-input {
     flex: 2;
+    min-width: 0;
   }
 
   .value-input {
     flex: 3;
+    min-width: 0;
   }
 
   .remove-btn {
     background: transparent;
     color: #f93e3e;
     border: 1px solid #f93e3e33;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -677,8 +777,8 @@
     background: #1a1a2e;
     border: 1px solid #333;
     border-radius: 8px;
-    padding: 0.75rem 1rem;
-    font-size: 0.85rem;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.8rem;
     color: inherit;
     font-family: 'SF Mono', 'Fira Code', monospace;
     resize: vertical;
@@ -696,9 +796,9 @@
     background: rgba(249, 62, 62, 0.1);
     border: 1px solid #f93e3e44;
     color: #f93e3e;
-    padding: 0.75rem 1rem;
+    padding: 0.65rem 0.85rem;
     border-radius: 8px 8px 0 0;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
   }
 
@@ -724,8 +824,8 @@
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    padding: 0.5rem 1rem;
-    font-size: 0.8rem;
+    padding: 0.45rem 0.85rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: #888;
     cursor: pointer;
@@ -744,12 +844,12 @@
 
   .debug-body {
     background: #1a1a2e;
-    padding: 1rem;
+    padding: 0.85rem;
     margin: 0;
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
     overflow-x: auto;
-    max-height: 400px;
+    max-height: 350px;
     overflow-y: auto;
     line-height: 1.6;
     white-space: pre-wrap;
@@ -759,9 +859,9 @@
 
   /* Response */
   .status-badge {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    padding: 0.25rem 0.6rem;
+    padding: 0.2rem 0.5rem;
     border-radius: 6px;
     font-family: 'SF Mono', 'Fira Code', monospace;
   }
@@ -787,8 +887,8 @@
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    padding: 0.5rem 1rem;
-    font-size: 0.8rem;
+    padding: 0.45rem 0.85rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: #888;
     cursor: pointer;
@@ -810,12 +910,12 @@
     border: 1px solid #333;
     border-top: none;
     border-radius: 0 0 8px 8px;
-    padding: 1rem;
+    padding: 0.85rem;
     margin: 0;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
     overflow-x: auto;
-    max-height: 400px;
+    max-height: 350px;
     overflow-y: auto;
     line-height: 1.5;
     white-space: pre-wrap;
@@ -825,17 +925,18 @@
   /* Hint */
   .hint {
     text-align: center;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: #555;
-    margin-top: 2rem;
+    margin-top: 1.5rem;
+    padding-bottom: 1rem;
   }
 
   kbd {
     background: #2a2a3e;
     border: 1px solid #444;
     border-radius: 4px;
-    padding: 0.1rem 0.35rem;
-    font-size: 0.7rem;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.65rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
   }
 
@@ -901,6 +1002,15 @@
       background: #f0f0f5;
       border-color: #ddd;
       color: #555;
+    }
+
+    .resize-handle:hover,
+    .resizing .resize-handle {
+      background: rgba(100, 108, 255, 0.1);
+    }
+
+    .resize-grip {
+      background: #ccc;
     }
   }
 </style>

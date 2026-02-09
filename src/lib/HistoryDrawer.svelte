@@ -4,7 +4,7 @@
   let { open = $bindable(false), onReplay = () => {} } = $props();
 
   // Filters
-  let filterMethod = $state('');
+  let filterMethods = $state([]);
   let filterUrl = $state('');
   let filterStatusMin = $state('');
   let filterStatusMax = $state('');
@@ -19,18 +19,25 @@
   let total = $state(0);
   let expandedId = $state(null);
 
-  const methods = ['', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+  const allMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+
+  function toggleMethod(m) {
+    if (filterMethods.includes(m)) {
+      filterMethods = filterMethods.filter(x => x !== m);
+    } else {
+      filterMethods = [...filterMethods, m];
+    }
+    page = 1;
+  }
 
   $effect(() => {
-    // Re-run whenever any filter/page/sort changes
-    // We read these to establish reactive deps:
-    filterMethod; filterUrl; filterStatusMin; filterStatusMax; page; sortDir; open;
+    filterMethods; filterUrl; filterStatusMin; filterStatusMax; page; sortDir; open;
     refresh();
   });
 
   export async function refresh() {
     const result = await queryRequests({
-      methodFilter: filterMethod || undefined,
+      methodFilter: filterMethods.length > 0 ? filterMethods : undefined,
       urlFilter: filterUrl || undefined,
       statusMin: filterStatusMin || undefined,
       statusMax: filterStatusMax || undefined,
@@ -63,12 +70,14 @@
     expandedId = expandedId === id ? null : id;
   }
 
-  function resetFilters() {
-    filterMethod = '';
+  async function resetFilters() {
+    filterMethods = [];
     filterUrl = '';
     filterStatusMin = '';
     filterStatusMax = '';
     page = 1;
+    sortDir = 'DESC';
+    await refresh();
   }
 
   function getMethodColor(m) {
@@ -95,61 +104,74 @@
     }
   }
 
-  function truncateUrl(u, max = 40) {
+  function truncateUrl(u, max = 45) {
     if (!u) return '';
     return u.length > max ? u.slice(0, max) + '...' : u;
   }
 </script>
 
-<!-- Overlay -->
-{#if open}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="overlay" onclick={() => open = false} onkeydown={() => {}}></div>
-{/if}
-
-<div class="drawer" class:open>
-  <div class="drawer-header">
+<div class="panel">
+  <div class="panel-header">
     <h2>History</h2>
-    <button class="close-btn" onclick={() => open = false}>&times;</button>
+    <button class="close-btn" onclick={() => open = false} title="Hide history">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="11 17 6 12 11 7"/>
+        <polyline points="18 17 13 12 18 7"/>
+      </svg>
+    </button>
   </div>
 
   <!-- Filters -->
   <div class="filters">
-    <select bind:value={filterMethod} class="filter-select">
-      {#each methods as m}
-        <option value={m}>{m || 'All Methods'}</option>
-      {/each}
-    </select>
-    <input
-      type="text"
-      bind:value={filterUrl}
-      placeholder="Filter URL..."
-      class="filter-input"
-    />
-    <div class="status-range">
+    <div class="filter-group">
+      <span class="filter-label">Request Methods</span>
+      <div class="method-chips">
+        {#each allMethods as m}
+        <button
+          class="method-chip"
+          class:selected={filterMethods.includes(m)}
+          style="--method-color: {getMethodColor(m)}"
+          onclick={() => toggleMethod(m)}
+        >{m}</button>
+        {/each}
+      </div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Response Codes</span>
+      <div class="status-range">
+        <input
+          type="number"
+          bind:value={filterStatusMin}
+          placeholder="Min"
+          class="filter-input status-input"
+          min="100"
+          max="599"
+        />
+        <span class="range-sep">-</span>
+        <input
+          type="number"
+          bind:value={filterStatusMax}
+          placeholder="Max"
+          class="filter-input status-input"
+          min="100"
+          max="599"
+        />
+      </div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">URL</span>
       <input
-        type="number"
-        bind:value={filterStatusMin}
-        placeholder="Min"
-        class="filter-input status-input"
-        min="100"
-        max="599"
-      />
-      <span class="range-sep">-</span>
-      <input
-        type="number"
-        bind:value={filterStatusMax}
-        placeholder="Max"
-        class="filter-input status-input"
-        min="100"
-        max="599"
+        type="text"
+        bind:value={filterUrl}
+        placeholder="Filter URL..."
+        class="filter-input"
       />
     </div>
     <div class="filter-actions">
       <button class="sort-btn" onclick={() => sortDir = sortDir === 'DESC' ? 'ASC' : 'DESC'} title="Toggle sort order">
         {sortDir === 'DESC' ? 'Newest first' : 'Oldest first'}
       </button>
-      <button class="reset-btn" onclick={resetFilters}>Reset</button>
+      <button class="reset-btn" onclick={resetFilters}>Reset Filters</button>
     </div>
   </div>
 
@@ -168,7 +190,7 @@
             {row.response_status || 'ERR'}
           </span>
           <span class="item-time">{formatTime(row.timestamp)}</span>
-            <button class="item-delete" onclick={(e) => { e.stopPropagation(); handleDelete(row.id); }} title="Delete">
+          <button class="item-delete" onclick={(e) => { e.stopPropagation(); handleDelete(row.id); }} title="Delete">
             &times;
           </button>
         </div>
@@ -217,11 +239,11 @@
   </div>
 
   <!-- Pagination & Clear -->
-  <div class="drawer-footer">
+  <div class="panel-footer">
     <div class="pagination">
-      <button class="page-btn" disabled={page <= 1} onclick={() => page--}>&laquo; Prev</button>
-      <span class="page-info">{page} / {totalPages} ({total} total)</span>
-      <button class="page-btn" disabled={page >= totalPages} onclick={() => page++}>Next &raquo;</button>
+      <button class="page-btn" disabled={page <= 1} onclick={() => page--}>&laquo;</button>
+      <span class="page-info">{page}/{totalPages} ({total})</span>
+      <button class="page-btn" disabled={page >= totalPages} onclick={() => page++}>&raquo;</button>
     </div>
     <button class="clear-all-btn" onclick={handleClearAll} disabled={total === 0}>
       Clear All
@@ -230,90 +252,112 @@
 </div>
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.4);
-    z-index: 99;
-  }
-
-  .drawer {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 420px;
-    max-width: 90vw;
-    background: #12121f;
-    border-right: 1px solid #333;
-    z-index: 100;
+  .panel {
     display: flex;
     flex-direction: column;
-    transform: translateX(-100%);
-    transition: transform 0.25s ease;
+    height: 100%;
+    width: 100%;
+    background: #12121f;
+    border-right: 1px solid #2a2a3e;
     overflow: hidden;
   }
 
-  .drawer.open {
-    transform: translateX(0);
-  }
-
-  .drawer-header {
+  .panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid #333;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #2a2a3e;
     flex-shrink: 0;
   }
 
-  .drawer-header h2 {
+  .panel-header h2 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 700;
   }
 
   .close-btn {
     background: transparent;
-    border: none;
+    border: 1px solid #333;
     color: #888;
-    font-size: 1.5rem;
+    width: 28px;
+    height: 28px;
     cursor: pointer;
     padding: 0;
-    line-height: 1;
-    border-radius: 0;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
   }
 
   .close-btn:hover {
     color: #fff;
+    border-color: #646cff;
   }
 
   /* Filters */
   .filters {
-    padding: 0.75rem 1.25rem;
-    border-bottom: 1px solid #333;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #2a2a3e;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
     flex-shrink: 0;
   }
 
-  .filter-select {
-    background: #1a1a2e;
+  .method-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .method-chip {
+    background: transparent;
     border: 1px solid #333;
-    border-radius: 6px;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.8rem;
-    color: inherit;
-    outline: none;
+    color: var(--method-color, #888);
+    padding: 0.2rem 0.45rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    opacity: 0.5;
+  }
+
+  .method-chip:hover {
+    opacity: 0.8;
+    border-color: var(--method-color, #888);
+  }
+
+  .method-chip.selected {
+    opacity: 1;
+    background: color-mix(in srgb, var(--method-color) 15%, transparent);
+    border-color: var(--method-color, #888);
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .filter-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #888;
   }
 
   .filter-input {
     background: #1a1a2e;
     border: 1px solid #333;
-    border-radius: 6px;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.8rem;
+    border-radius: 5px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.75rem;
     color: inherit;
     outline: none;
     font-family: 'SF Mono', 'Fira Code', monospace;
@@ -321,37 +365,37 @@
     box-sizing: border-box;
   }
 
-  .filter-input:focus,
-  .filter-select:focus {
+  .filter-input:focus {
     border-color: #646cff;
   }
 
   .status-range {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.3rem;
+    flex: 1;
   }
 
   .status-input {
-    width: 50%;
+    width: 100%;
   }
 
   .range-sep {
     color: #555;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
   }
 
   .filter-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .sort-btn, .reset-btn {
     background: transparent;
     border: 1px solid #444;
     color: #aaa;
-    padding: 0.3rem 0.6rem;
-    font-size: 0.72rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.68rem;
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
@@ -366,14 +410,14 @@
   .results {
     flex: 1;
     overflow-y: auto;
-    padding: 0.5rem 0;
+    padding: 0.25rem 0;
   }
 
   .empty {
     text-align: center;
     color: #555;
     padding: 2rem;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
   }
 
   .history-item {
@@ -382,13 +426,13 @@
 
   .item-summary {
     display: grid;
-    grid-template-columns: 54px 1fr auto auto 28px;
-    gap: 0.4rem;
+    grid-template-columns: 50px 1fr auto auto 24px;
+    gap: 0.35rem;
     align-items: center;
-    padding: 0.55rem 1.25rem;
+    padding: 0.45rem 1rem;
     cursor: pointer;
     transition: background 0.15s;
-    font-size: 0.78rem;
+    font-size: 0.73rem;
   }
 
   .item-summary:hover {
@@ -398,13 +442,13 @@
   .item-method {
     font-weight: 700;
     font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
   }
 
   .item-url {
     color: #ccc;
     font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -413,13 +457,13 @@
   .item-status {
     font-weight: 600;
     font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     text-align: right;
   }
 
   .item-time {
     color: #666;
-    font-size: 0.68rem;
+    font-size: 0.63rem;
     white-space: nowrap;
   }
 
@@ -427,7 +471,7 @@
     background: transparent;
     border: none;
     color: #666;
-    font-size: 1.1rem;
+    font-size: 1rem;
     cursor: pointer;
     padding: 0;
     line-height: 1;
@@ -441,28 +485,28 @@
 
   /* Expanded details */
   .item-details {
-    padding: 0.5rem 1.25rem 0.75rem;
+    padding: 0.4rem 1rem 0.6rem;
     background: rgba(26, 26, 46, 0.5);
     border-top: 1px solid #2a2a3e;
   }
 
   .detail-row {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: #aaa;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.35rem;
   }
 
   .detail-section {
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
   }
 
   .detail-label {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: #888;
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.15rem;
   }
 
   .error-label {
@@ -473,12 +517,12 @@
     background: #16162a;
     border: 1px solid #2a2a3e;
     border-radius: 4px;
-    padding: 0.5rem;
+    padding: 0.4rem;
     margin: 0;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
     overflow-x: auto;
-    max-height: 150px;
+    max-height: 120px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
@@ -495,11 +539,11 @@
     background: transparent;
     border: 1px dashed #646cff;
     color: #646cff;
-    padding: 0.3rem 0.7rem;
-    font-size: 0.75rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.7rem;
     border-radius: 4px;
     cursor: pointer;
-    margin-top: 0.4rem;
+    margin-top: 0.35rem;
     transition: all 0.2s;
   }
 
@@ -508,9 +552,9 @@
   }
 
   /* Footer */
-  .drawer-footer {
-    border-top: 1px solid #333;
-    padding: 0.75rem 1.25rem;
+  .panel-footer {
+    border-top: 1px solid #2a2a3e;
+    padding: 0.6rem 1rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -520,15 +564,15 @@
   .pagination {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .page-btn {
     background: transparent;
     border: 1px solid #444;
     color: #aaa;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.72rem;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.68rem;
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
@@ -545,7 +589,7 @@
   }
 
   .page-info {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     color: #888;
   }
 
@@ -553,8 +597,8 @@
     background: transparent;
     border: 1px solid #f93e3e44;
     color: #f93e3e;
-    padding: 0.3rem 0.7rem;
-    font-size: 0.72rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.68rem;
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
@@ -572,22 +616,29 @@
 
   /* Light mode */
   @media (prefers-color-scheme: light) {
-    .drawer {
+    .panel {
       background: #fafafe;
       border-right-color: #ddd;
     }
 
-    .drawer-header {
+    .panel-header {
       border-bottom-color: #ddd;
+    }
+
+    .close-btn {
+      border-color: #ddd;
     }
 
     .filters {
       border-bottom-color: #ddd;
     }
 
-    .filter-select,
     .filter-input {
       background: #f0f0f5;
+      border-color: #ddd;
+    }
+
+    .method-chip {
       border-color: #ddd;
     }
 
@@ -614,7 +665,7 @@
       color: #444;
     }
 
-    .drawer-footer {
+    .panel-footer {
       border-top-color: #ddd;
     }
   }

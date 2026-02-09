@@ -17,7 +17,11 @@ export async function saveRequest(record) {
 export async function queryRequests({ methodFilter, urlFilter, statusMin, statusMax, page = 1, pageSize = 20, sortDir = 'DESC' } = {}) {
   try {
     const params = new URLSearchParams();
-    if (methodFilter) params.set('method', methodFilter);
+    if (methodFilter && Array.isArray(methodFilter) && methodFilter.length > 0) {
+      params.set('method', methodFilter.join(','));
+    } else if (methodFilter && typeof methodFilter === 'string') {
+      params.set('method', methodFilter);
+    }
     if (urlFilter) params.set('url', urlFilter);
     if (statusMin != null && statusMin !== '') params.set('statusMin', statusMin);
     if (statusMax != null && statusMax !== '') params.set('statusMax', statusMax);

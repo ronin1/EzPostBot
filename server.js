@@ -74,8 +74,14 @@ app.get('/api/history', (req, res) => {
   const params = [];
 
   if (methodFilter) {
-    conditions.push('method = ?');
-    params.push(methodFilter);
+    const methods = methodFilter.split(',').map(m => m.trim()).filter(Boolean);
+    if (methods.length === 1) {
+      conditions.push('method = ?');
+      params.push(methods[0]);
+    } else if (methods.length > 1) {
+      conditions.push(`method IN (${methods.map(() => '?').join(',')})`);
+      params.push(...methods);
+    }
   }
   if (urlFilter) {
     conditions.push('url LIKE ?');
