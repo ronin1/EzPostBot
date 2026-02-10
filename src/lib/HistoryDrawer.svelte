@@ -137,6 +137,26 @@
     return u || '';
   }
 
+  function buildStoredRequestText(row) {
+    const lines = [];
+    lines.push(`${row.method || 'GET'} ${row.url || ''}`);
+    lines.push('');
+    lines.push('--- Request Headers ---');
+    if (row.request_headers) {
+      lines.push(row.request_headers);
+    } else {
+      lines.push('(none)');
+    }
+
+    if (row.request_body) {
+      lines.push('');
+      lines.push('--- Request Body ---');
+      lines.push(row.request_body);
+    }
+
+    return lines.join('\n');
+  }
+
   // Per-item active tab for expanded details
   let itemTab = $state({});
   function getItemTab(id) {
@@ -313,31 +333,14 @@
                 </div>
               </div>
             {:else if getItemTab(row.id) === 'request'}
-              {#if row.request_headers}
-                <div class="detail-section">
-                  <div class="detail-label">Request Headers</div>
-                  <div class="pre-wrapper">
-                    <button class="copy-btn" onclick={() => copyText(row.request_headers, `rh-${row.id}`)} title="Copy">
-                      {copiedId === `rh-${row.id}` ? '✓' : '⧉'}
-                    </button>
-                    <pre class="detail-pre">{row.request_headers}</pre>
-                  </div>
+              <div class="detail-section">
+                <div class="pre-wrapper">
+                  <button class="copy-btn" onclick={() => copyText(buildStoredRequestText(row), `req-${row.id}`)} title="Copy">
+                    {copiedId === `req-${row.id}` ? '✓' : '⧉'}
+                  </button>
+                  <pre class="detail-pre">{buildStoredRequestText(row)}</pre>
                 </div>
-              {/if}
-              {#if row.request_body}
-                <div class="detail-section">
-                  <div class="detail-label">Request Body</div>
-                  <div class="pre-wrapper">
-                    <button class="copy-btn" onclick={() => copyText(row.request_body, `rb-${row.id}`)} title="Copy">
-                      {copiedId === `rb-${row.id}` ? '✓' : '⧉'}
-                    </button>
-                    <pre class="detail-pre">{row.request_body}</pre>
-                  </div>
-                </div>
-              {/if}
-              {#if !row.request_headers && !row.request_body}
-                <div class="detail-section"><span class="detail-empty">(no request data)</span></div>
-              {/if}
+              </div>
             {:else if getItemTab(row.id) === 'preflight'}
               <div class="detail-section">
                 <div class="pre-wrapper">

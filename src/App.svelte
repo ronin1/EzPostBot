@@ -6,6 +6,7 @@
   let method = $state('GET');
   let body = $state('');
   let headers = $state([]);
+  let queryParams = $state([]);
   let response = $state(null);
   let responseStatus = $state(null);
   let responseHeaders = $state('');
@@ -26,11 +27,17 @@
   let drawerOpen = $state(false);
   let drawerRef = $state(null);
 
+  const MIN_DRAWER = 260;
+
   // Resize state
-  let drawerWidth = $state(340);
+  let drawerWidth = $state(
+    Math.max(
+      MIN_DRAWER,
+      Math.floor(((typeof window !== 'undefined' ? window.innerWidth : 1200) * 42) / 100)
+    )
+  );
   let isResizing = $state(false);
 
-  const MIN_DRAWER = 260;
   const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
   const showBody = $derived(method === 'POST' || method === 'PUT' || method === 'PATCH');
 
@@ -59,6 +66,39 @@
 
   function removeHeader(index) {
     headers = headers.filter((_, i) => i !== index);
+  }
+
+  function addQueryParam() {
+    queryParams = [...queryParams, { key: '', value: '' }];
+  }
+
+  function removeQueryParam(index) {
+    queryParams = queryParams.filter((_, i) => i !== index);
+  }
+
+  const activeQueryParams = $derived(
+    queryParams.filter((q) => q.key.trim())
+  );
+
+  const querySuffix = $derived.by(() => {
+    if (activeQueryParams.length === 0) return '';
+    const encoded = activeQueryParams
+      .map((q) => `${encodeURIComponent(q.key.trim())}=${encodeURIComponent(q.value || '')}`)
+      .join('&');
+    return encoded ? `${url.includes('?') ? '&' : '?'}${encoded}` : '';
+  });
+
+  function buildRequestUrl(baseUrl) {
+    if (!querySuffix) return baseUrl;
+    try {
+      const parsed = new URL(baseUrl);
+      for (const q of activeQueryParams) {
+        parsed.searchParams.append(q.key.trim(), q.value || '');
+      }
+      return parsed.toString();
+    } catch {
+      return `${baseUrl}${querySuffix}`;
+    }
   }
 
   function getMethodColor(m) {
@@ -177,14 +217,15 @@
       opts.body = body;
     }
 
-    const requestDebug = buildRequestDebug(url, opts);
+    const requestUrl = buildRequestUrl(url);
+    const requestDebug = buildRequestDebug(requestUrl, opts);
     const requestHeadersStr = Object.keys(opts.headers).length > 0
       ? Object.entries(opts.headers).map(([k, v]) => `${k}: ${v}`).join('\n')
       : '';
     const startTime = performance.now();
 
     try {
-      const res = await fetch(url, opts);
+      const res = await fetch(requestUrl, opts);
       const durationMs = Math.round(performance.now() - startTime);
       responseDuration = durationMs;
 
@@ -221,7 +262,7 @@
         await saveRequest({
           timestamp: new Date().toISOString(),
           method,
-          url,
+          url: requestUrl,
           requestHeaders: requestHeadersStr,
           requestBody: opts.body || '',
           responseStatus: res.status,
@@ -237,7 +278,7 @@
         await saveRequest({
           timestamp: new Date().toISOString(),
           method,
-          url,
+          url: requestUrl,
           requestHeaders: requestHeadersStr,
           requestBody: opts.body || '',
           responseStatus: res.status,
@@ -258,7 +299,7 @@
       const isCorsLikely = err instanceof TypeError;
 
       if (isCorsLikely) {
-        preflightDebug = await probePreflight(url, opts);
+        preflightDebug = await probePreflight(requestUrl, opts);
       }
 
       const diagLines = [];
@@ -288,7 +329,7 @@
       await saveRequest({
         timestamp: new Date().toISOString(),
         method,
-        url,
+        url: requestUrl,
         requestHeaders: requestHeadersStr,
         requestBody: opts.body || '',
         responseStatus: null,
@@ -314,7 +355,34 @@
 
   function handleReplay(row) {
     method = row.method;
-    url = row.url;
+    try {
+      const parsed = new URL(row.url);
+      parsed.search = '';
+      url = parsed.toString();
+      queryParams = [];
+      for (const [key, value] of new URL(row.url).searchParams.entries()) {
+        queryParams = [...queryParams, { key, value }];
+      }
+    } catch {
+      const idx = row.url.indexOf('?');
+      if (idx >= 0) {
+        url = row.url.slice(0, idx);
+        const qs = row.url.slice(idx + 1);
+        queryParams = qs
+          .split('&')
+          .filter(Boolean)
+          .map((pair) => {
+            const [k, ...rest] = pair.split('=');
+            return {
+              key: decodeURIComponent(k || ''),
+              value: decodeURIComponent(rest.join('=') || ''),
+            };
+          });
+      } else {
+        url = row.url;
+        queryParams = [];
+      }
+    }
     if (row.request_headers) {
       headers = row.request_headers.split('\n').filter(Boolean).map((line) => {
         const idx = line.indexOf(':');
@@ -370,12 +438,17 @@
               <option value={m} style="color: {getMethodColor(m)}">{m}</option>
             {/each}
           </select>
-          <input
-            type="text"
-            bind:value={url}
-            placeholder="Enter request URL..."
-            class="url-input"
-          />
+          <div class="url-input-wrap">
+            <input
+              type="text"
+              bind:value={url}
+              placeholder="Enter request URL..."
+              class="url-input"
+            />
+            {#if querySuffix}
+              <span class="url-query-preview" title={querySuffix}>{querySuffix}</span>
+            {/if}
+          </div>
           <button class="send-btn" onclick={sendRequest} disabled={loading}>
             {#if loading}
               <span class="spinner"></span> Sending...
@@ -410,6 +483,39 @@
                     class="header-input value-input"
                   />
                   <button class="remove-btn" onclick={() => removeHeader(i)} title="Remove header">
+                    &times;
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <!-- Query Params Section -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">Query Params</span>
+            <button class="add-header-btn" onclick={addQueryParam}>
+              + Add Param
+            </button>
+          </div>
+          {#if queryParams.length > 0}
+            <div class="headers-list">
+              {#each queryParams as param, i}
+                <div class="header-row">
+                  <input
+                    type="text"
+                    bind:value={param.key}
+                    placeholder="Param name"
+                    class="header-input key-input"
+                  />
+                  <input
+                    type="text"
+                    bind:value={param.value}
+                    placeholder="Value"
+                    class="header-input value-input"
+                  />
+                  <button class="remove-btn" onclick={() => removeQueryParam(i)} title="Remove query param">
                     &times;
                   </button>
                 </div>
@@ -688,12 +794,36 @@
     flex: 1;
     background: transparent;
     border: none;
-    padding: 0.65rem 0.85rem;
+    padding: 0.45rem 0.85rem 0.1rem;
     font-size: 0.9rem;
     color: inherit;
     font-family: 'SF Mono', 'Fira Code', monospace;
     outline: none;
     min-width: 0;
+  }
+
+  .url-input-wrap {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+    padding: 0.25rem 0;
+  }
+
+  .url-query-preview {
+    display: block;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    color: #7a7a8e;
+    padding: 0 0.85rem 0.3rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.25;
+    max-height: 4.2em;
+    overflow-y: auto;
   }
 
   .url-input::placeholder {
@@ -1080,6 +1210,10 @@
 
     .url-input::placeholder {
       color: #aaa;
+    }
+
+    .url-query-preview {
+      color: #9a9aab;
     }
 
     .header-input,
