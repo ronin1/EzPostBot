@@ -28,15 +28,28 @@
   let drawerRef = $state(null);
 
   const MIN_DRAWER = 260;
+  const DEFAULT_DRAWER_RATIO = 0.42;
+  const MAX_DRAWER_RATIO = 0.7;
+
+  function getDefaultDrawerWidth() {
+    const viewport = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const target = Math.floor(viewport * DEFAULT_DRAWER_RATIO);
+    const maxAllowed = Math.floor(viewport * MAX_DRAWER_RATIO);
+    return Math.min(maxAllowed, Math.max(MIN_DRAWER, target));
+  }
 
   // Resize state
-  let drawerWidth = $state(
-    Math.max(
-      MIN_DRAWER,
-      Math.floor(((typeof window !== 'undefined' ? window.innerWidth : 1200) * 42) / 100)
-    )
-  );
+  let drawerWidth = $state(getDefaultDrawerWidth());
   let isResizing = $state(false);
+
+  function toggleHistoryDrawer() {
+    if (!drawerOpen) {
+      drawerWidth = getDefaultDrawerWidth();
+      drawerOpen = true;
+      return;
+    }
+    drawerOpen = false;
+  }
 
   const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
   const showBody = $derived(method === 'POST' || method === 'PUT' || method === 'PATCH');
@@ -46,7 +59,7 @@
     isResizing = true;
 
     function onMouseMove(e) {
-      const maxWidth = window.innerWidth * 0.7;
+      const maxWidth = window.innerWidth * MAX_DRAWER_RATIO;
       drawerWidth = Math.min(maxWidth, Math.max(MIN_DRAWER, e.clientX));
     }
 
@@ -413,7 +426,7 @@
       <div class="main-content">
         <div class="app-header">
           <div class="app-header-row">
-            <button class="history-toggle" onclick={() => drawerOpen = !drawerOpen} title="Request History">
+            <button class="history-toggle" onclick={toggleHistoryDrawer} title="Request History">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 {#if drawerOpen}
                   <polyline points="11 17 6 12 11 7"/>
