@@ -585,7 +585,7 @@
   .resize-grip {
     width: 2px;
     height: 32px;
-    background: #444;
+    background: #4a4a5a;
     border-radius: 1px;
     transition: background 0.15s;
   }
@@ -638,8 +638,8 @@
   }
 
   .history-toggle {
-    background: #1a1a2e;
-    border: 1px solid #333;
+    background: #202038;
+    border: 1px solid #3a3a4a;
     color: #aaa;
     padding: 0.4rem 0.7rem;
     font-size: 0.78rem;
@@ -663,22 +663,22 @@
   .request-bar {
     display: flex;
     gap: 0;
-    border: 2px solid #333;
+    border: 2px solid #3a3a4a;
     border-radius: 10px;
     overflow: hidden;
-    background: #1a1a2e;
+    background: #202038;
     margin-bottom: 1.25rem;
   }
 
   .method-select {
-    background: #16162a;
+    background: #1c1c32;
     border: none;
     padding: 0.65rem 0.85rem;
     font-size: 0.85rem;
     font-weight: 700;
     font-family: 'SF Mono', 'Fira Code', monospace;
     cursor: pointer;
-    border-right: 2px solid #333;
+    border-right: 2px solid #3a3a4a;
     outline: none;
     min-width: 90px;
     appearance: auto;
@@ -764,7 +764,7 @@
 
   .badge {
     font-size: 0.6rem;
-    background: #333;
+    background: #3a3a4a;
     padding: 0.12rem 0.35rem;
     border-radius: 4px;
     text-transform: uppercase;
@@ -802,8 +802,8 @@
   }
 
   .header-input {
-    background: #1a1a2e;
-    border: 1px solid #333;
+    background: #202038;
+    border: 1px solid #3a3a4a;
     border-radius: 6px;
     padding: 0.5rem 0.65rem;
     font-size: 0.8rem;
@@ -852,8 +852,8 @@
   /* Body input */
   .body-input {
     width: 100%;
-    background: #1a1a2e;
-    border: 1px solid #333;
+    background: #202038;
+    border: 1px solid #3a3a4a;
     border-radius: 8px;
     padding: 0.65rem 0.85rem;
     font-size: 0.8rem;
@@ -894,7 +894,7 @@
   .debug-tabs {
     display: flex;
     gap: 0;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid #3a3a4a;
     background: rgba(249, 62, 62, 0.04);
   }
 
@@ -921,7 +921,7 @@
   }
 
   .debug-body {
-    background: #1a1a2e;
+    background: #202038;
     padding: 0.85rem;
     margin: 0;
     font-size: 0.75rem;
@@ -970,7 +970,7 @@
     display: flex;
     gap: 0;
     margin-bottom: 0;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid #3a3a4a;
   }
 
   .tab-btn {
@@ -1003,8 +1003,8 @@
     position: absolute;
     top: 6px;
     right: 6px;
-    background: #252540;
-    border: 1px solid #444;
+    background: #2c2c4a;
+    border: 1px solid #4a4a5a;
     color: #888;
     width: 28px;
     height: 28px;
@@ -1028,12 +1028,12 @@
   .response-copy-btn:hover {
     color: #fff;
     border-color: #646cff;
-    background: #2a2a50;
+    background: #323258;
   }
 
   .response-body {
-    background: #1a1a2e;
-    border: 1px solid #333;
+    background: #202038;
+    border: 1px solid #3a3a4a;
     border-top: none;
     border-radius: 0 0 8px 8px;
     padding: 0.85rem;
@@ -1058,8 +1058,8 @@
   }
 
   kbd {
-    background: #2a2a3e;
-    border: 1px solid #444;
+    background: #32324a;
+    border: 1px solid #4a4a5a;
     border-radius: 4px;
     padding: 0.1rem 0.3rem;
     font-size: 0.65rem;

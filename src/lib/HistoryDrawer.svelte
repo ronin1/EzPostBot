@@ -377,8 +377,8 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background: #12121f;
-    border-right: 1px solid #2a2a3e;
+    background: #191928;
+    border-right: 1px solid #32324a;
     overflow: hidden;
   }
 
@@ -387,7 +387,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid #32324a;
     flex-shrink: 0;
   }
 
@@ -399,7 +399,7 @@
 
   .close-btn {
     background: transparent;
-    border: 1px solid #333;
+    border: 1px solid #3a3a4a;
     color: #888;
     width: 28px;
     height: 28px;
@@ -420,7 +420,7 @@
   /* Filters */
   .filters {
     padding: 0.6rem 1rem;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid #32324a;
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
@@ -435,7 +435,7 @@
 
   .method-chip {
     background: transparent;
-    border: 1px solid #333;
+    border: 1px solid #3a3a4a;
     color: var(--method-color, #888);
     padding: 0.2rem 0.45rem;
     font-size: 0.65rem;
@@ -473,8 +473,8 @@
   }
 
   .filter-input {
-    background: #1a1a2e;
-    border: 1px solid #333;
+    background: #202038;
+    border: 1px solid #3a3a4a;
     border-radius: 5px;
     padding: 0.35rem 0.5rem;
     font-size: 0.75rem;
@@ -512,7 +512,7 @@
 
   .sort-btn, .reset-btn {
     background: transparent;
-    border: 1px solid #444;
+    border: 1px solid #4a4a5a;
     color: #aaa;
     padding: 0.25rem 0.5rem;
     font-size: 0.68rem;
@@ -541,7 +541,7 @@
   }
 
   .history-item {
-    border-bottom: 1px solid #1e1e32;
+    border-bottom: 1px solid #26263a;
   }
 
   .item-summary {
@@ -607,7 +607,7 @@
   .detail-tabs {
     display: flex;
     gap: 0;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid #32324a;
     margin-bottom: 0.4rem;
   }
 
@@ -640,8 +640,8 @@
 
   .item-details {
     padding: 0.4rem 1rem 0.6rem;
-    background: rgba(26, 26, 46, 0.5);
-    border-top: 1px solid #2a2a3e;
+    background: rgba(32, 32, 56, 0.5);
+    border-top: 1px solid #32324a;
   }
 
   .detail-row {
@@ -675,8 +675,8 @@
     position: absolute;
     top: 4px;
     right: 4px;
-    background: #1e1e34;
-    border: 1px solid #333;
+    background: #242440;
+    border: 1px solid #3a3a4a;
     color: #888;
     width: 24px;
     height: 24px;
@@ -700,12 +700,12 @@
   .copy-btn:hover {
     color: #fff;
     border-color: #646cff;
-    background: #252540;
+    background: #2c2c4a;
   }
 
   .detail-pre {
-    background: #16162a;
-    border: 1px solid #2a2a3e;
+    background: #1c1c32;
+    border: 1px solid #32324a;
     border-radius: 4px;
     padding: 0.4rem;
     margin: 0;
@@ -746,7 +746,7 @@
 
   /* Footer */
   .panel-footer {
-    border-top: 1px solid #2a2a3e;
+    border-top: 1px solid #32324a;
     padding: 0.6rem 1rem;
     display: flex;
     align-items: center;
@@ -762,7 +762,7 @@
 
   .page-btn {
     background: transparent;
-    border: 1px solid #444;
+    border: 1px solid #4a4a5a;
     color: #aaa;
     padding: 0.2rem 0.45rem;
     font-size: 0.68rem;
