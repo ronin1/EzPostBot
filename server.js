@@ -28,9 +28,15 @@ db.exec(`
     response_headers TEXT,
     response_body TEXT,
     error TEXT,
-    duration_ms INTEGER
+    duration_ms INTEGER,
+    diagnosis TEXT,
+    preflight TEXT
   )
 `);
+
+// Migration: add columns if they don't exist yet (for existing databases)
+try { db.exec('ALTER TABLE requests ADD COLUMN diagnosis TEXT'); } catch {}
+try { db.exec('ALTER TABLE requests ADD COLUMN preflight TEXT'); } catch {}
 
 const app = express();
 app.use(cors());
@@ -45,15 +51,16 @@ app.use(express.static(join(__dirname, 'dist')));
 app.post('/api/history', (req, res) => {
   const r = req.body;
   const stmt = db.prepare(`
-    INSERT INTO requests (timestamp, method, url, request_headers, request_body, response_status, response_status_text, response_headers, response_body, error, duration_ms)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO requests (timestamp, method, url, request_headers, request_body, response_status, response_status_text, response_headers, response_body, error, duration_ms, diagnosis, preflight)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     r.timestamp, r.method, r.url,
     r.requestHeaders || null, r.requestBody || null,
     r.responseStatus || null, r.responseStatusText || null,
     r.responseHeaders || null, r.responseBody || null,
-    r.error || null, r.durationMs || null
+    r.error || null, r.durationMs || null,
+    r.diagnosis || null, r.preflight || null
   );
   res.json({ id: result.lastInsertRowid });
 });

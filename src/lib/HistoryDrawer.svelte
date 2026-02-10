@@ -137,6 +137,15 @@
     return u || '';
   }
 
+  // Per-item active tab for expanded details
+  let itemTab = $state({});
+  function getItemTab(id) {
+    return itemTab[id] || 'response';
+  }
+  function setItemTab(id, tab) {
+    itemTab = { ...itemTab, [id]: tab };
+  }
+
   let copiedId = $state(null);
   async function copyText(text, id) {
     try {
@@ -236,61 +245,110 @@
             {#if row.duration_ms != null}
               <div class="detail-row"><strong>Duration:</strong> {row.duration_ms}ms</div>
             {/if}
-            {#if row.request_headers}
+
+            <div class="detail-tabs">
+              <button class="detail-tab" class:active={getItemTab(row.id) === 'response'} onclick={() => setItemTab(row.id, 'response')}>
+                Response
+              </button>
+              {#if row.diagnosis}
+                <button class="detail-tab" class:active={getItemTab(row.id) === 'diagnosis'} onclick={() => setItemTab(row.id, 'diagnosis')}>
+                  Diagnosis
+                </button>
+              {/if}
+              <button class="detail-tab" class:active={getItemTab(row.id) === 'request'} onclick={() => setItemTab(row.id, 'request')}>
+                Request
+              </button>
+              {#if row.preflight}
+                <button class="detail-tab" class:active={getItemTab(row.id) === 'preflight'} onclick={() => setItemTab(row.id, 'preflight')}>
+                  Preflight
+                </button>
+              {/if}
+            </div>
+
+            {#if getItemTab(row.id) === 'response'}
+              <!-- Response tab: status, headers, body, error -->
+              {#if row.error}
+                <div class="detail-section">
+                  <div class="detail-label error-label">Error</div>
+                  <div class="pre-wrapper">
+                    <button class="copy-btn" onclick={() => copyText(row.error, `err-${row.id}`)} title="Copy">
+                      {copiedId === `err-${row.id}` ? '✓' : '⧉'}
+                    </button>
+                    <pre class="detail-pre error-pre">{row.error}</pre>
+                  </div>
+                </div>
+              {/if}
+              {#if row.response_headers}
+                <div class="detail-section">
+                  <div class="detail-label">Response Headers</div>
+                  <div class="pre-wrapper">
+                    <button class="copy-btn" onclick={() => copyText(row.response_headers, `resh-${row.id}`)} title="Copy">
+                      {copiedId === `resh-${row.id}` ? '✓' : '⧉'}
+                    </button>
+                    <pre class="detail-pre">{row.response_headers}</pre>
+                  </div>
+                </div>
+              {/if}
+              {#if row.response_body}
+                <div class="detail-section">
+                  <div class="detail-label">Response Body</div>
+                  <div class="pre-wrapper">
+                    <button class="copy-btn" onclick={() => copyText(row.response_body, `resb-${row.id}`)} title="Copy">
+                      {copiedId === `resb-${row.id}` ? '✓' : '⧉'}
+                    </button>
+                    <pre class="detail-pre">{row.response_body}</pre>
+                  </div>
+                </div>
+              {/if}
+              {#if !row.error && !row.response_headers && !row.response_body}
+                <div class="detail-section"><span class="detail-empty">(no response data)</span></div>
+              {/if}
+            {:else if getItemTab(row.id) === 'diagnosis'}
               <div class="detail-section">
-                <div class="detail-label">Request Headers</div>
                 <div class="pre-wrapper">
-                  <button class="copy-btn" onclick={() => copyText(row.request_headers, `rh-${row.id}`)} title="Copy">
-                    {copiedId === `rh-${row.id}` ? '✓' : '⧉'}
+                  <button class="copy-btn" onclick={() => copyText(row.diagnosis, `diag-${row.id}`)} title="Copy">
+                    {copiedId === `diag-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre">{row.request_headers}</pre>
+                  <pre class="detail-pre">{row.diagnosis}</pre>
+                </div>
+              </div>
+            {:else if getItemTab(row.id) === 'request'}
+              {#if row.request_headers}
+                <div class="detail-section">
+                  <div class="detail-label">Request Headers</div>
+                  <div class="pre-wrapper">
+                    <button class="copy-btn" onclick={() => copyText(row.request_headers, `rh-${row.id}`)} title="Copy">
+                      {copiedId === `rh-${row.id}` ? '✓' : '⧉'}
+                    </button>
+                    <pre class="detail-pre">{row.request_headers}</pre>
+                  </div>
+                </div>
+              {/if}
+              {#if row.request_body}
+                <div class="detail-section">
+                  <div class="detail-label">Request Body</div>
+                  <div class="pre-wrapper">
+                    <button class="copy-btn" onclick={() => copyText(row.request_body, `rb-${row.id}`)} title="Copy">
+                      {copiedId === `rb-${row.id}` ? '✓' : '⧉'}
+                    </button>
+                    <pre class="detail-pre">{row.request_body}</pre>
+                  </div>
+                </div>
+              {/if}
+              {#if !row.request_headers && !row.request_body}
+                <div class="detail-section"><span class="detail-empty">(no request data)</span></div>
+              {/if}
+            {:else if getItemTab(row.id) === 'preflight'}
+              <div class="detail-section">
+                <div class="pre-wrapper">
+                  <button class="copy-btn" onclick={() => copyText(row.preflight, `pf-${row.id}`)} title="Copy">
+                    {copiedId === `pf-${row.id}` ? '✓' : '⧉'}
+                  </button>
+                  <pre class="detail-pre">{row.preflight}</pre>
                 </div>
               </div>
             {/if}
-            {#if row.request_body}
-              <div class="detail-section">
-                <div class="detail-label">Request Body</div>
-                <div class="pre-wrapper">
-                  <button class="copy-btn" onclick={() => copyText(row.request_body, `rb-${row.id}`)} title="Copy">
-                    {copiedId === `rb-${row.id}` ? '✓' : '⧉'}
-                  </button>
-                  <pre class="detail-pre">{row.request_body}</pre>
-                </div>
-              </div>
-            {/if}
-            {#if row.response_headers}
-              <div class="detail-section">
-                <div class="detail-label">Response Headers</div>
-                <div class="pre-wrapper">
-                  <button class="copy-btn" onclick={() => copyText(row.response_headers, `resh-${row.id}`)} title="Copy">
-                    {copiedId === `resh-${row.id}` ? '✓' : '⧉'}
-                  </button>
-                  <pre class="detail-pre">{row.response_headers}</pre>
-                </div>
-              </div>
-            {/if}
-            {#if row.response_body}
-              <div class="detail-section">
-                <div class="detail-label">Response Body</div>
-                <div class="pre-wrapper">
-                  <button class="copy-btn" onclick={() => copyText(row.response_body, `resb-${row.id}`)} title="Copy">
-                    {copiedId === `resb-${row.id}` ? '✓' : '⧉'}
-                  </button>
-                  <pre class="detail-pre">{row.response_body}</pre>
-                </div>
-              </div>
-            {/if}
-            {#if row.error}
-              <div class="detail-section">
-                <div class="detail-label error-label">Error</div>
-                <div class="pre-wrapper">
-                  <button class="copy-btn" onclick={() => copyText(row.error, `err-${row.id}`)} title="Copy">
-                    {copiedId === `err-${row.id}` ? '✓' : '⧉'}
-                  </button>
-                  <pre class="detail-pre error-pre">{row.error}</pre>
-                </div>
-              </div>
-            {/if}
+
             <button class="replay-btn" onclick={() => onReplay(row)}>
               Replay Request
             </button>
@@ -546,6 +604,40 @@
   }
 
   /* Expanded details */
+  .detail-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #2a2a3e;
+    margin-bottom: 0.4rem;
+  }
+
+  .detail-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #888;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .detail-tab:hover {
+    color: #ccc;
+  }
+
+  .detail-tab.active {
+    color: #646cff;
+    border-bottom-color: #646cff;
+  }
+
+  .detail-empty {
+    color: #555;
+    font-size: 0.7rem;
+    font-style: italic;
+  }
+
   .item-details {
     padding: 0.4rem 1rem 0.6rem;
     background: rgba(26, 26, 46, 0.5);
@@ -758,6 +850,18 @@
     .item-details {
       background: rgba(240, 240, 250, 0.5);
       border-top-color: #eee;
+    }
+
+    .detail-tabs {
+      border-bottom-color: #ddd;
+    }
+
+    .detail-tab {
+      color: #666;
+    }
+
+    .detail-tab:hover {
+      color: #333;
     }
 
     .detail-pre {

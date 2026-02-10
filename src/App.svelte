@@ -148,7 +148,7 @@
 
   async function sendRequest() {
     if (!url.trim()) {
-      errorDebug = { message: 'Please enter a URL', request: '', preflight: '', response: '' };
+      errorDebug = { message: 'Please enter a URL', request: '', preflight: '', rawResponse: '', diagnosis: '' };
       return;
     }
 
@@ -208,30 +208,49 @@
         response = await res.text();
       }
 
-      await saveRequest({
-        timestamp: new Date().toISOString(),
-        method,
-        url,
-        requestHeaders: requestHeadersStr,
-        requestBody: opts.body || '',
-        responseStatus: res.status,
-        responseStatusText: res.statusText,
-        responseHeaders,
-        responseBody: response,
-        error: null,
-        durationMs,
-      });
-      drawerRef?.refresh();
-
       if (!res.ok) {
-        activeTab = 'response';
+        const diagText = `HTTP error ${res.status} ${res.statusText}\n\nThe server returned a non-successful status code.\nCheck the Response tab for full details.`;
+        activeTab = 'rawResponse';
         errorDebug = {
           message: `HTTP ${res.status} ${res.statusText}`,
           request: requestDebug,
           preflight: '',
-          response: `--- Response Status ---\n${res.status} ${res.statusText}\n\n--- Response Headers ---\n${responseHeaders}\n\n--- Response Body ---\n${response || '(empty)'}`,
+          rawResponse: `--- Response Status ---\n${res.status} ${res.statusText}\n\n--- Response Headers ---\n${responseHeaders}\n\n--- Response Body ---\n${response || '(empty)'}`,
+          diagnosis: diagText,
         };
+        await saveRequest({
+          timestamp: new Date().toISOString(),
+          method,
+          url,
+          requestHeaders: requestHeadersStr,
+          requestBody: opts.body || '',
+          responseStatus: res.status,
+          responseStatusText: res.statusText,
+          responseHeaders,
+          responseBody: response,
+          error: `HTTP ${res.status} ${res.statusText}`,
+          durationMs,
+          diagnosis: diagText,
+          preflight: '',
+        });
+      } else {
+        await saveRequest({
+          timestamp: new Date().toISOString(),
+          method,
+          url,
+          requestHeaders: requestHeadersStr,
+          requestBody: opts.body || '',
+          responseStatus: res.status,
+          responseStatusText: res.statusText,
+          responseHeaders,
+          responseBody: response,
+          error: null,
+          durationMs,
+          diagnosis: null,
+          preflight: null,
+        });
       }
+      drawerRef?.refresh();
     } catch (err) {
       const durationMs = Math.round(performance.now() - startTime);
       responseDuration = durationMs;
@@ -255,6 +274,17 @@
         diagLines.push('Check the browser DevTools Console & Network tab for more details.');
       }
 
+      const diagText = diagLines.join('\n');
+
+      activeTab = preflightDebug ? 'preflight' : 'rawResponse';
+      errorDebug = {
+        message: `${err.name}: ${err.message}`,
+        request: requestDebug,
+        preflight: preflightDebug,
+        rawResponse: `${err.name}: ${err.message}`,
+        diagnosis: diagText,
+      };
+
       await saveRequest({
         timestamp: new Date().toISOString(),
         method,
@@ -267,16 +297,10 @@
         responseBody: null,
         error: `${err.name}: ${err.message}`,
         durationMs,
+        diagnosis: diagText,
+        preflight: preflightDebug || null,
       });
       drawerRef?.refresh();
-
-      activeTab = preflightDebug ? 'preflight' : 'request';
-      errorDebug = {
-        message: `${err.name}: ${err.message}`,
-        request: requestDebug,
-        preflight: preflightDebug,
-        response: diagLines.join('\n'),
-      };
     } finally {
       loading = false;
     }
@@ -417,6 +441,12 @@
             </div>
             <div class="debug-panel">
               <div class="debug-tabs">
+                <button class="debug-tab" class:active={activeTab === 'rawResponse'} onclick={() => activeTab = 'rawResponse'}>
+                  Response
+                </button>
+                <button class="debug-tab" class:active={activeTab === 'diagnosis'} onclick={() => activeTab = 'diagnosis'}>
+                  Diagnosis
+                </button>
                 <button class="debug-tab" class:active={activeTab === 'request'} onclick={() => activeTab = 'request'}>
                   Request
                 </button>
@@ -425,16 +455,35 @@
                     Preflight
                   </button>
                 {/if}
-                <button class="debug-tab" class:active={activeTab === 'response'} onclick={() => activeTab = 'response'}>
-                  Response / Diagnosis
-                </button>
               </div>
-              {#if activeTab === 'request'}
-                <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
+              {#if activeTab === 'rawResponse'}
+                <div class="response-pre-wrapper">
+                  <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.rawResponse || '', 'dbg-response')} title="Copy">
+                    {copiedPanel === 'dbg-response' ? '✓' : '⧉'}
+                  </button>
+                  <pre class="debug-body">{errorDebug.rawResponse || '(no response)'}</pre>
+                </div>
+              {:else if activeTab === 'diagnosis'}
+                <div class="response-pre-wrapper">
+                  <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.diagnosis || '', 'dbg-diagnosis')} title="Copy">
+                    {copiedPanel === 'dbg-diagnosis' ? '✓' : '⧉'}
+                  </button>
+                  <pre class="debug-body">{errorDebug.diagnosis || '(no diagnosis available)'}</pre>
+                </div>
+              {:else if activeTab === 'request'}
+                <div class="response-pre-wrapper">
+                  <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.request || '', 'dbg-request')} title="Copy">
+                    {copiedPanel === 'dbg-request' ? '✓' : '⧉'}
+                  </button>
+                  <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
+                </div>
               {:else if activeTab === 'preflight'}
-                <pre class="debug-body">{errorDebug.preflight}</pre>
-              {:else}
-                <pre class="debug-body">{errorDebug.response || '(no response)'}</pre>
+                <div class="response-pre-wrapper">
+                  <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.preflight || '', 'dbg-preflight')} title="Copy">
+                    {copiedPanel === 'dbg-preflight' ? '✓' : '⧉'}
+                  </button>
+                  <pre class="debug-body">{errorDebug.preflight}</pre>
+                </div>
               {/if}
             </div>
           </div>
