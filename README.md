@@ -14,6 +14,8 @@ Install the following tools before running any command:
 - `node` and `npm`
 - `docker` with `docker compose`
 
+NOTE: if you just want to run the app & have Docker installed. There is no need to install any other requirements. `make docker-run` will just work & you can access the app at: `http://localhost:8099`
+
 Recommended:
 
 - Run from a Unix-like shell (`zsh`, `bash`, etc.)
