@@ -1,4 +1,4 @@
-# PostBot
+# 👾 PostBot
 
 ![PostBot Screenshot](md_img/post_bot_screenshot.png)
 
