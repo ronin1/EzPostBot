@@ -439,7 +439,7 @@
               {drawerOpen ? 'Hide' : 'History'}
             </button>
             <div>
-              <h1>👾 PostBot</h1>
+              <h1>👾 EzPostBot</h1>
               <p class="subtitle">Test API endpoints directly from your browser</p>
             </div>
           </div>

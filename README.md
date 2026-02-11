@@ -1,8 +1,8 @@
-# 👾 PostBot
+# 👾 EzPostBot
 
-![PostBot Screenshot](md_img/post_bot_screenshot.png)
+![EzPostBot Screenshot](md_img/post_bot_screenshot.png)
 
-PostBot is a Postman-like tool that runs in your browser to test API connectivity, including CORS requests.
+EzPostBot is a Postman-like tool that runs in your browser to test API connectivity, including CORS requests.
 
 *Disclaimer*: I vibe coded this app in a few hours. I am not a UI engineer by trade.
 
