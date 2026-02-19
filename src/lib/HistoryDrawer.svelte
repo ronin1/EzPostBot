@@ -491,6 +491,7 @@
     color: inherit;
     outline: none;
     font-family: 'SF Mono', 'Fira Code', monospace;
+    color-scheme: dark;
     width: 100%;
     box-sizing: border-box;
   }
@@ -854,6 +855,7 @@
     background: #dadaea;
     border-color: #a0a0b4;
     color: #2a2a3a;
+    color-scheme: light;
   }
 
   .light-theme .method-chip {
