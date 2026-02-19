@@ -5,7 +5,7 @@
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.9);
-  background-color: #161625;
+  background-color: #23233a;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -36,7 +36,7 @@ html, body {
 
 @media (prefers-color-scheme: light) {
   :root {
-    color: #213547;
-    background-color: #fafafe;
+    color: #2a3a4a;
+    background-color: #d8d8e6;
   }
 }

@@ -109,12 +109,21 @@
     await refresh();
   }
 
+  const isDarkMode = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
   function getMethodColor(m) {
+    if (isDarkMode) {
+      const colors = {
+        GET: '#8ccfff', POST: '#80eebc', PUT: '#ffc86a',
+        PATCH: '#85f5de', DELETE: '#ff8080', HEAD: '#c880ff', OPTIONS: '#6aaaf0',
+      };
+      return colors[m] || '#aaa';
+    }
     const colors = {
-      GET: '#61affe', POST: '#49cc90', PUT: '#fca130',
-      PATCH: '#50e3c2', DELETE: '#f93e3e', HEAD: '#9012fe', OPTIONS: '#0d5aa7',
+      GET: '#1a5a9e', POST: '#0e6e3e', PUT: '#9a6000',
+      PATCH: '#0e6e52', DELETE: '#aa1515', HEAD: '#5208a0', OPTIONS: '#063870',
     };
-    return colors[m] || '#888';
+    return colors[m] || '#555';
   }
 
   function getStatusColor(code) {
@@ -476,7 +485,7 @@
   }
 
   .filter-input {
-    background: #202038;
+    background: #2e2e4d;
     border: 1px solid #3a3a4a;
     border-radius: 5px;
     padding: 0.35rem 0.5rem;
@@ -707,7 +716,7 @@
   }
 
   .detail-pre {
-    background: #1c1c32;
+    background: #2a2a46;
     border: 1px solid #32324a;
     border-radius: 4px;
     padding: 0.4rem;
@@ -813,79 +822,127 @@
   /* Light mode */
   @media (prefers-color-scheme: light) {
     .panel {
-      background: #fafafe;
-      border-right-color: #ddd;
+      background: #e2e2ee;
+      border-right-color: #a0a0b4;
     }
 
     .panel-header {
-      border-bottom-color: #ddd;
+      border-bottom-color: #a0a0b4;
     }
 
     .close-btn {
-      border-color: #ddd;
+      border-color: #a0a0b4;
+      color: #555;
+    }
+
+    .close-btn:hover {
+      color: #111;
     }
 
     .filters {
-      border-bottom-color: #ddd;
+      border-bottom-color: #a0a0b4;
+    }
+
+    .filter-label {
+      color: #555;
     }
 
     .filter-input {
-      background: #f0f0f5;
-      border-color: #ddd;
+      background: #dadaea;
+      border-color: #a0a0b4;
+      color: #2a2a3a;
     }
 
     .method-chip {
-      border-color: #ddd;
+      border-color: #a0a0b4;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    .method-chip.selected {
+      background: color-mix(in srgb, var(--method-color) 20%, white);
+    }
+
+    .item-method {
+      background: #6a6a80;
+      color: #fff !important;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      filter: none;
+    }
+
+    .item-status {
+      background: #6a6a80;
+      color: #fff !important;
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      filter: none;
+    }
+
+    .sort-btn, .reset-btn {
+      border-color: #a0a0b4;
+      color: #444;
+      background: #dadaea;
+    }
+
+    .sort-btn:hover, .reset-btn:hover {
+      border-color: #646cff;
+      color: #111;
+      background: #d0d0e0;
+    }
+
+    .clear-all-btn {
+      border-color: #f93e3e88;
     }
 
     .history-item {
-      border-bottom-color: #eee;
+      border-bottom-color: #a0a0b4;
     }
 
     .item-summary:hover {
-      background: rgba(100, 108, 255, 0.04);
+      background: rgba(100, 108, 255, 0.06);
     }
 
     .item-url {
-      color: #333;
+      color: #2a2a3a;
     }
 
     .item-details {
-      background: rgba(240, 240, 250, 0.5);
-      border-top-color: #eee;
+      background: rgba(200, 200, 220, 0.4);
+      border-top-color: #a0a0b4;
     }
 
     .detail-tabs {
-      border-bottom-color: #ddd;
+      border-bottom-color: #a0a0b4;
     }
 
     .detail-tab {
-      color: #666;
-    }
-
-    .detail-tab:hover {
-      color: #333;
-    }
-
-    .detail-pre {
-      background: #f0f0f5;
-      border-color: #ddd;
       color: #444;
     }
 
-    .copy-btn {
-      background: #e8e8f0;
-      border-color: #ccc;
-      color: #666;
+    .detail-tab:hover {
+      color: #111;
     }
 
-    .copy-btn:hover {
-      background: #dddde8;
+    .detail-pre {
+      background: #dadaea;
+      border-color: #a0a0b4;
+      color: #2a2a3a;
+    }
+
+    .copy-btn {
+      background: #ccccd8;
+      border-color: #999;
       color: #333;
     }
 
+    .copy-btn:hover {
+      background: #c0c0d0;
+      color: #111;
+    }
+
     .panel-footer {
-      border-top-color: #ddd;
+      border-top-color: #a0a0b4;
     }
   }
 </style>
