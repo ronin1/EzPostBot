@@ -286,7 +286,7 @@
       <div class="empty">No requests found</div>
     {/if}
     {#each rows as row (row.id)}
-      <div class="history-item">
+      <div class="history-item" class:expanded={expandedId === row.id}>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="item-summary" onclick={() => toggleExpand(row.id)} onkeydown={() => {}}>
           <span class="item-method" style="color: {getMethodColor(row.method)}">{row.method}</span>
@@ -691,6 +691,10 @@
 
   .history-item {
     border-bottom: 1px solid #26263a;
+  }
+
+  .history-item.expanded {
+    background: rgba(100, 108, 255, 0.06);
   }
 
   .item-summary {
@@ -1127,6 +1131,10 @@
 
   .light-theme .history-item {
     border-bottom-color: #a0a0b4;
+  }
+
+  .light-theme .history-item.expanded {
+    background: rgba(100, 108, 255, 0.08);
   }
 
   .light-theme .item-summary:hover {

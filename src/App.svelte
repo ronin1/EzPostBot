@@ -16,6 +16,14 @@
   let responseStatus = $state(null);
   let responseHeaders = $state('');
   let loading = $state(false);
+  let liveElapsed = $state(0);
+  let requestStartMs = $state(0);
+  $effect(() => {
+    if (!loading) return;
+    const t = requestStartMs;
+    const id = setInterval(() => { liveElapsed = Math.round(performance.now() - t); }, 50);
+    return () => clearInterval(id);
+  });
   let errorDebug = $state(null);
   let activeTab = $state('body');
   let responseDuration = $state(null);
@@ -441,6 +449,8 @@
     }
 
     loading = true;
+    requestStartMs = performance.now();
+    liveElapsed = 0;
     errorDebug = null;
     response = null;
     responseStatus = null;
@@ -881,7 +891,7 @@
           </div>
           <button class="send-btn" onclick={sendRequest} disabled={loading}>
             {#if loading}
-              <span class="spinner"></span> Sending...
+              <span class="spinner"></span> {liveElapsed < 1000 ? `${liveElapsed}ms` : `${(liveElapsed / 1000).toFixed(1)}s`}
             {:else}
               Send
             {/if}
@@ -1510,6 +1520,9 @@
     align-items: center;
     gap: 0.5rem;
     white-space: nowrap;
+    min-width: 90px;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
   }
 
   .send-btn:hover:not(:disabled) {
