@@ -131,6 +131,53 @@ app.delete('/api/history', (_req, res) => {
   res.json({ ok: true });
 });
 
+// Server-side proxy — bypasses CORS by making the request from the server
+app.post('/api/proxy', async (req, res) => {
+  const { url, method: reqMethod, headers: reqHeaders, body: reqBody } = req.body;
+  if (!url) return res.status(400).json({ error: 'Missing url' });
+
+  const startTime = performance.now();
+  try {
+    const fetchOpts = { method: reqMethod || 'GET', headers: {} };
+
+    if (reqHeaders && typeof reqHeaders === 'object') {
+      for (const [k, v] of Object.entries(reqHeaders)) {
+        fetchOpts.headers[k] = v;
+      }
+    }
+
+    if (reqBody && ['POST', 'PUT', 'PATCH'].includes((reqMethod || '').toUpperCase())) {
+      fetchOpts.body = reqBody;
+    }
+
+    const upstream = await fetch(url, fetchOpts);
+    const durationMs = Math.round(performance.now() - startTime);
+
+    const respHeaders = {};
+    upstream.headers.forEach((value, key) => { respHeaders[key] = value; });
+
+    const bodyText = await upstream.text();
+
+    res.json({
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: respHeaders,
+      body: bodyText,
+      durationMs,
+    });
+  } catch (err) {
+    const durationMs = Math.round(performance.now() - startTime);
+    res.json({
+      status: null,
+      statusText: null,
+      headers: {},
+      body: null,
+      durationMs,
+      error: `${err.name}: ${err.message}`,
+    });
+  }
+});
+
 // SPA fallback — serve index.html for any non-API route
 app.get('/{*splat}', (_req, res) => {
   res.sendFile(join(__dirname, 'dist', 'index.html'));
