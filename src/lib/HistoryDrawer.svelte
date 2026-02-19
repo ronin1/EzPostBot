@@ -1,7 +1,7 @@
 <script>
   import { queryRequests, deleteRequest, clearAllRequests } from './db.js';
 
-  let { open = $bindable(false), onReplay = () => {} } = $props();
+  let { open = $bindable(false), onReplay = () => {}, darkMode = true } = $props();
 
   // Filters
   let filterMethods = $state([]);
@@ -110,11 +110,18 @@
   }
 
   function getMethodColor(m) {
+    if (darkMode) {
+      const colors = {
+        GET: '#8ccfff', POST: '#80eebc', PUT: '#ffc86a',
+        PATCH: '#85f5de', DELETE: '#ff8080', HEAD: '#c880ff', OPTIONS: '#6aaaf0',
+      };
+      return colors[m] || '#aaa';
+    }
     const colors = {
-      GET: '#61affe', POST: '#49cc90', PUT: '#fca130',
-      PATCH: '#50e3c2', DELETE: '#f93e3e', HEAD: '#9012fe', OPTIONS: '#0d5aa7',
+      GET: '#1a5a9e', POST: '#0e6e3e', PUT: '#9a6000',
+      PATCH: '#0e6e52', DELETE: '#aa1515', HEAD: '#5208a0', OPTIONS: '#063870',
     };
-    return colors[m] || '#888';
+    return colors[m] || '#555';
   }
 
   function getStatusColor(code) {
@@ -176,7 +183,7 @@
   }
 </script>
 
-<div class="panel">
+<div class="panel" class:light-theme={!darkMode}>
   <div class="panel-header">
     <h2>History</h2>
     <button class="close-btn" onclick={() => open = false} title="Hide history">
@@ -476,7 +483,7 @@
   }
 
   .filter-input {
-    background: #202038;
+    background: #2e2e4d;
     border: 1px solid #3a3a4a;
     border-radius: 5px;
     padding: 0.35rem 0.5rem;
@@ -707,7 +714,7 @@
   }
 
   .detail-pre {
-    background: #1c1c32;
+    background: #2a2a46;
     border: 1px solid #32324a;
     border-radius: 4px;
     padding: 0.4rem;
@@ -811,81 +818,127 @@
   }
 
   /* Light mode */
-  @media (prefers-color-scheme: light) {
-    .panel {
-      background: #fafafe;
-      border-right-color: #ddd;
-    }
+  .panel.light-theme {
+    background: #e2e2ee;
+    border-right-color: #a0a0b4;
+  }
 
-    .panel-header {
-      border-bottom-color: #ddd;
-    }
+  .light-theme .panel-header {
+    border-bottom-color: #a0a0b4;
+  }
 
-    .close-btn {
-      border-color: #ddd;
-    }
+  .light-theme .close-btn {
+    border-color: #a0a0b4;
+    color: #555;
+  }
 
-    .filters {
-      border-bottom-color: #ddd;
-    }
+  .light-theme .close-btn:hover {
+    color: #111;
+  }
 
-    .filter-input {
-      background: #f0f0f5;
-      border-color: #ddd;
-    }
+  .light-theme .filters {
+    border-bottom-color: #a0a0b4;
+  }
 
-    .method-chip {
-      border-color: #ddd;
-    }
+  .light-theme .filter-label {
+    color: #555;
+  }
 
-    .history-item {
-      border-bottom-color: #eee;
-    }
+  .light-theme .filter-input {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #2a2a3a;
+  }
 
-    .item-summary:hover {
-      background: rgba(100, 108, 255, 0.04);
-    }
+  .light-theme .method-chip {
+    border-color: #a0a0b4;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.5);
+  }
 
-    .item-url {
-      color: #333;
-    }
+  .light-theme .method-chip.selected {
+    background: color-mix(in srgb, var(--method-color) 20%, white);
+  }
 
-    .item-details {
-      background: rgba(240, 240, 250, 0.5);
-      border-top-color: #eee;
-    }
+  .light-theme .item-method {
+    background: #6a6a80;
+    color: #fff !important;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    filter: none;
+  }
 
-    .detail-tabs {
-      border-bottom-color: #ddd;
-    }
+  .light-theme .item-status {
+    background: #6a6a80;
+    color: #fff !important;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    filter: none;
+  }
 
-    .detail-tab {
-      color: #666;
-    }
+  .light-theme .sort-btn, .light-theme .reset-btn {
+    border-color: #a0a0b4;
+    color: #444;
+    background: #dadaea;
+  }
 
-    .detail-tab:hover {
-      color: #333;
-    }
+  .light-theme .sort-btn:hover, .light-theme .reset-btn:hover {
+    border-color: #646cff;
+    color: #111;
+    background: #d0d0e0;
+  }
 
-    .detail-pre {
-      background: #f0f0f5;
-      border-color: #ddd;
-      color: #444;
-    }
+  .light-theme .clear-all-btn {
+    border-color: #f93e3e88;
+  }
 
-    .copy-btn {
-      background: #e8e8f0;
-      border-color: #ccc;
-      color: #666;
-    }
+  .light-theme .history-item {
+    border-bottom-color: #a0a0b4;
+  }
 
-    .copy-btn:hover {
-      background: #dddde8;
-      color: #333;
-    }
+  .light-theme .item-summary:hover {
+    background: rgba(100, 108, 255, 0.06);
+  }
 
-    .panel-footer {
-      border-top-color: #ddd;
-    }
+  .light-theme .item-url {
+    color: #2a2a3a;
+  }
+
+  .light-theme .item-details {
+    background: rgba(200, 200, 220, 0.4);
+    border-top-color: #a0a0b4;
+  }
+
+  .light-theme .detail-tabs {
+    border-bottom-color: #a0a0b4;
+  }
+
+  .light-theme .detail-tab {
+    color: #444;
+  }
+
+  .light-theme .detail-tab:hover {
+    color: #111;
+  }
+
+  .light-theme .detail-pre {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #2a2a3a;
+  }
+
+  .light-theme .copy-btn {
+    background: #ccccd8;
+    border-color: #999;
+    color: #333;
+  }
+
+  .light-theme .copy-btn:hover {
+    background: #c0c0d0;
+    color: #111;
+  }
+
+  .light-theme .panel-footer {
+    border-top-color: #a0a0b4;
   }
 </style>
