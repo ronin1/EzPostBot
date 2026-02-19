@@ -694,7 +694,7 @@
   }
 
   .history-item.expanded {
-    background: rgba(100, 108, 255, 0.06);
+    background: rgba(100, 108, 255, 0.14);
   }
 
   .item-summary {
