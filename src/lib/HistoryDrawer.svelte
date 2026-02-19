@@ -651,8 +651,8 @@
   .sort-verb {
     width: 78px;
     flex-shrink: 0;
-    padding-left: 0.4rem;
     text-align: left;
+    padding-left: 0.55rem;
   }
 
   .sort-url {
