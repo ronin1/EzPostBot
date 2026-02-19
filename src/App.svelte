@@ -28,6 +28,12 @@
   const CLOSE_PAIRS = { '{': '}', '[': ']', '"': '"' };
 
   function handleBodyKeydown(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      e.preventDefault();
+      formatJson();
+      return;
+    }
+
     if (!jsonAssist || !bodyTextarea) return;
     const ta = bodyTextarea;
     const start = ta.selectionStart;
@@ -229,6 +235,42 @@
       return `${baseUrl}${querySuffix}`;
     }
   }
+
+  const curlCommand = $derived.by(() => {
+    const reqUrl = buildRequestUrl(url);
+    const parts = ['curl'];
+    if (method !== 'GET') parts.push(`-X ${method}`);
+
+    const shellEsc = (s) => `'${s.replace(/'/g, "'\\''")}'`;
+    parts.push(shellEsc(reqUrl));
+
+    for (const h of headers) {
+      if (h.key.trim()) {
+        parts.push(`-H ${shellEsc(`${h.key.trim()}: ${h.value}`)}`);
+      }
+    }
+
+    if (showBody) {
+      if (bodyType === 'json' && body.trim()) {
+        parts.push(`-H ${shellEsc('Content-Type: application/json')}`);
+        parts.push(`-d ${shellEsc(body)}`);
+      } else if (bodyType === 'form') {
+        const active = formFields.filter(f => f.key.trim());
+        if (active.length > 0) {
+          for (const f of active) {
+            parts.push(`--data-urlencode ${shellEsc(`${f.key.trim()}=${f.value || ''}`)}`);
+          }
+        }
+      } else if (bodyType === 'file' && selectedFiles.length > 0) {
+        const name = fileFieldName.trim() || 'file';
+        for (const f of selectedFiles) {
+          parts.push(`-F ${shellEsc(`${name}=@${f.name}`)}`);
+        }
+      }
+    }
+
+    return parts.join(' \\\n  ');
+  });
 
   function getMethodColor(m) {
     const colors = {
@@ -631,6 +673,10 @@
       e.preventDefault();
       body = '';
     }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'h') {
+      e.preventDefault();
+      toggleHistoryDrawer();
+    }
   }
 
   function handleReplay(row) {
@@ -718,7 +764,7 @@
       <div class="main-content">
         <div class="app-header">
           <div class="app-header-row">
-            <button class="history-toggle" onclick={toggleHistoryDrawer} title="Request History">
+            <button class="history-toggle" onclick={toggleHistoryDrawer} title={`Request History (${navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+H)`}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 {#if drawerOpen}
                   <polyline points="11 17 6 12 11 7"/>
@@ -866,13 +912,13 @@
               ></textarea>
               <div class="body-actions">
                 <button class="body-action-btn" onclick={formatJson} title="Format JSON">
-                  <span class="body-action-icon">{'{}'}</span> Format
+                  <span class="body-action-icon">{'{}'}</span> Format <kbd class="btn-kbd">{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+F</kbd>
                 </button>
                 <button class="body-action-btn" onclick={copyBody} title="Copy body">
                   <span class="body-action-icon">{copiedBody ? '✓' : '⧉'}</span> {copiedBody ? 'Copied' : 'Copy'}
                 </button>
                 <button class="body-action-btn" onclick={() => { body = ''; }} title="Clear body">
-                  <span class="body-action-icon">✕</span> Clear
+                  <span class="body-action-icon">✕</span> Clear <kbd class="btn-kbd">{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Esc</kbd>
                 </button>
                 <label class="assist-toggle" title="Auto-close brackets, quotes, and smart indentation">
                   <span class="toggle-switch small" class:active={jsonAssist}>
@@ -1059,8 +1105,20 @@
           </div>
         {/if}
 
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">cURL Command</span>
+          </div>
+          <div class="response-pre-wrapper">
+            <pre class="curl-output">{curlCommand}</pre>
+            <button class="response-copy-btn" onclick={() => copyPanelText(curlCommand, 'curl')} title="Copy cURL command">
+              {copiedPanel === 'curl' ? '✓' : '⧉'}
+            </button>
+          </div>
+        </div>
+
         <div class="hint">
-          Press <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Enter</kbd> to send request &nbsp;·&nbsp; <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Esc</kbd> to clear body
+          Press <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Enter</kbd> to send request
         </div>
       </div>
     </div>
@@ -1565,6 +1623,12 @@
     font-size: 0.75rem;
   }
 
+  .btn-kbd {
+    font-size: 0.6rem;
+    opacity: 0.5;
+    margin-left: 0.15rem;
+  }
+
   .assist-toggle {
     display: flex;
     align-items: center;
@@ -1765,12 +1829,15 @@
     font-size: 0.75rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
     overflow-x: auto;
-    max-height: 350px;
+    height: 350px;
+    min-height: 80px;
+    max-height: 80vh;
     overflow-y: auto;
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
     color: #ccc;
+    resize: vertical;
   }
 
   /* Response */
@@ -1881,11 +1948,31 @@
     font-size: 0.75rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
     overflow-x: auto;
-    max-height: 350px;
+    height: 350px;
+    min-height: 80px;
+    max-height: 80vh;
     overflow-y: auto;
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
+    resize: vertical;
+  }
+
+  .curl-output {
+    background: #202038;
+    border: 1px solid #3a3a4a;
+    border-radius: 8px;
+    padding: 0.85rem;
+    margin: 0;
+    font-size: 0.75rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    overflow-x: auto;
+    max-height: 200px;
+    overflow-y: auto;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #b0b0c0;
   }
 
   /* Hint */
@@ -1931,6 +2018,12 @@
     .response-body {
       background: #f5f5fa;
       border-color: #ddd;
+    }
+
+    .curl-output {
+      background: #f5f5fa;
+      border-color: #ddd;
+      color: #444;
     }
 
     .response-copy-btn {
@@ -2033,6 +2126,11 @@
       background: #f0f0f5;
       border-color: #ddd;
       color: #555;
+    }
+
+    .history-toggle:hover {
+      color: #111;
+      background: #e4e4ee;
     }
 
     .resize-handle:hover,
