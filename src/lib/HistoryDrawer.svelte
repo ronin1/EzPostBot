@@ -180,6 +180,7 @@
   }
 
   let copiedId = $state(null);
+  let detailFontSize = $state(0.72);
   async function copyText(text, id) {
     try {
       await navigator.clipboard.writeText(text);
@@ -299,8 +300,15 @@
         {#if expandedId === row.id}
           <div class="item-details">
             <div class="detail-row">
-              <strong>Mode:</strong> {row.server_side ? 'Server-side' : 'Client-side'}
-              {#if row.duration_ms != null}&nbsp;·&nbsp;<strong>Duration:</strong> {row.duration_ms}ms{/if}
+              <span class="detail-info">
+                <strong>Mode:</strong> {row.server_side ? 'Server-side' : 'Client-side'}
+                {#if row.duration_ms != null}&nbsp;·&nbsp;<strong>Duration:</strong> {row.duration_ms}ms{/if}
+              </span>
+              <span class="font-size-controls">
+                <button class="font-btn" disabled={detailFontSize <= 0.32} onclick={() => { detailFontSize = +(detailFontSize - 0.04).toFixed(2); }} title="Decrease font size">A−</button>
+                <button class="font-btn font-btn-reset" disabled={Math.abs(detailFontSize - 0.72) < 0.01} onclick={() => { detailFontSize = 0.72; }} title="Reset font size">A</button>
+                <button class="font-btn" disabled={detailFontSize >= 1.12} onclick={() => { detailFontSize = +(detailFontSize + 0.04).toFixed(2); }} title="Increase font size">A+</button>
+              </span>
             </div>
 
             <div class="detail-tabs">
@@ -331,7 +339,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.error, `err-${row.id}`)} title="Copy">
                       {copiedId === `err-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre error-pre">{row.error}</pre>
+                    <pre class="detail-pre error-pre" style="font-size: {detailFontSize}rem">{row.error}</pre>
                   </div>
                 </div>
               {/if}
@@ -342,7 +350,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.response_headers, `resh-${row.id}`)} title="Copy">
                       {copiedId === `resh-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre">{row.response_headers}</pre>
+                    <pre class="detail-pre" style="font-size: {detailFontSize}rem">{row.response_headers}</pre>
                   </div>
                 </div>
               {/if}
@@ -353,7 +361,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.response_body, `resb-${row.id}`)} title="Copy">
                       {copiedId === `resb-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre">{row.response_body}</pre>
+                    <pre class="detail-pre" style="font-size: {detailFontSize}rem">{row.response_body}</pre>
                   </div>
                 </div>
               {/if}
@@ -366,7 +374,7 @@
                   <button class="copy-btn" onclick={() => copyText(row.diagnosis, `diag-${row.id}`)} title="Copy">
                     {copiedId === `diag-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre">{row.diagnosis}</pre>
+                  <pre class="detail-pre" style="font-size: {detailFontSize}rem">{row.diagnosis}</pre>
                 </div>
               </div>
             {:else if getItemTab(row.id) === 'request'}
@@ -375,7 +383,7 @@
                   <button class="copy-btn" onclick={() => copyText(buildStoredRequestText(row), `req-${row.id}`)} title="Copy">
                     {copiedId === `req-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre">{buildStoredRequestText(row)}</pre>
+                  <pre class="detail-pre" style="font-size: {detailFontSize}rem">{buildStoredRequestText(row)}</pre>
                 </div>
               </div>
             {:else if getItemTab(row.id) === 'preflight'}
@@ -384,7 +392,7 @@
                   <button class="copy-btn" onclick={() => copyText(row.preflight, `pf-${row.id}`)} title="Copy">
                     {copiedId === `pf-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre">{row.preflight}</pre>
+                  <pre class="detail-pre" style="font-size: {detailFontSize}rem">{row.preflight}</pre>
                 </div>
               </div>
             {/if}
@@ -617,9 +625,11 @@
   .sort-label {
     font-size: 0.8rem;
     color: #666;
-    padding: 0.2rem 0.45rem;
+    padding: 0.2rem 0.5rem;
     flex-shrink: 0;
     line-height: 1;
+    width: 28px;
+    text-align: center;
   }
 
   .sort-sep {
@@ -641,8 +651,10 @@
   }
 
   .sort-verb {
-    width: 80px;
+    width: 78px;
     flex-shrink: 0;
+    padding-left: 0.4rem;
+    text-align: left;
   }
 
   .sort-url {
@@ -651,7 +663,7 @@
   }
 
   .sort-date {
-    width: 160px;
+    width: 150px;
     flex-shrink: 0;
   }
 
@@ -685,10 +697,10 @@
 
   .item-summary {
     display: grid;
-    grid-template-columns: 50px auto minmax(0, 1fr) auto auto 24px;
-    gap: 0.35rem;
+    grid-template-columns: 50px auto minmax(0, 1fr) 36px 110px 16px;
+    gap: 0.25rem;
     align-items: center;
-    padding: 0.45rem 1rem;
+    padding: 0.3rem 0.4rem;
     cursor: pointer;
     transition: background 0.15s;
     font-size: 0.73rem;
@@ -739,31 +751,41 @@
     font-weight: 600;
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 0.68rem;
-    text-align: right;
+    text-align: center;
     background: #23233a;
     padding: 0.1rem 0.3rem;
     border-radius: 3px;
+    width: 36px;
   }
 
   .item-time {
     color: #666;
     font-size: 0.63rem;
     white-space: nowrap;
+    width: 110px;
+    text-align: right;
+    padding-right: 0.5rem;
   }
 
   .item-delete {
-    background: transparent;
+    background: rgba(249, 62, 62, 0.15);
     border: none;
-    color: #666;
-    font-size: 1rem;
+    color: #cc5555;
+    font-size: 0.7rem;
     cursor: pointer;
-    padding: 0;
+    padding: 0.15rem 0.25rem;
+    margin-left: 0.25rem;
     line-height: 1;
-    border-radius: 0;
-    transition: color 0.2s;
+    border-radius: 3px;
+    transition: all 0.2s;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .item-delete:hover {
+    background: rgba(249, 62, 62, 0.35);
     color: #f93e3e;
   }
 
@@ -812,6 +834,44 @@
     font-size: 0.7rem;
     color: #aaa;
     margin-bottom: 0.35rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .detail-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .font-size-controls {
+    display: flex;
+    gap: 0.2rem;
+    flex-shrink: 0;
+  }
+
+  .font-btn {
+    background: transparent;
+    border: 1px solid #3a3a4a;
+    color: #888;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1;
+  }
+
+  .font-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #ccc;
+  }
+
+  .font-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
   }
 
   .detail-section {
@@ -1104,6 +1164,16 @@
     background: rgba(100, 108, 255, 0.06);
   }
 
+  .light-theme .item-delete {
+    background: rgba(249, 62, 62, 0.1);
+    color: #bb4444;
+  }
+
+  .light-theme .item-delete:hover {
+    background: rgba(249, 62, 62, 0.25);
+    color: #d92020;
+  }
+
   .light-theme .item-url {
     color: #2a2a3a;
   }
@@ -1126,9 +1196,9 @@
   }
 
   .light-theme .detail-pre {
-    background: #dadaea;
+    background: #ececf4;
     border-color: #a0a0b4;
-    color: #2a2a3a;
+    color: #222;
   }
 
   .light-theme .copy-btn {
@@ -1144,6 +1214,16 @@
 
   .light-theme .detail-row {
     color: #444;
+  }
+
+  .light-theme .font-btn {
+    border-color: #a0a0b4;
+    color: #555;
+  }
+
+  .light-theme .font-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #222;
   }
 
   .light-theme .panel-footer {

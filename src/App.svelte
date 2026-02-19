@@ -22,8 +22,18 @@
   let serverSide = $state(false);
   let copiedPanel = $state(null);
   let copiedBody = $state(false);
+  let showHeaders = $state(true);
+  let showQueryParams = $state(true);
+  let showRequestBody = $state(true);
+  let showResponse = $state(true);
+  let showCurl = $state(true);
   let jsonAssist = $state(true);
   let bodyTextarea = $state(null);
+  let bodyFontSize = $state(0.85);
+  const BODY_FONT_DEFAULT = 0.85;
+  const BODY_FONT_STEP = 0.04;
+  const BODY_FONT_MIN = BODY_FONT_DEFAULT - 10 * BODY_FONT_STEP;
+  const BODY_FONT_MAX = BODY_FONT_DEFAULT + 10 * BODY_FONT_STEP;
 
   const CLOSE_PAIRS = { '{': '}', '[': ']', '"': '"' };
 
@@ -759,13 +769,14 @@
 
     const reqBody = row.request_body || '';
     const contentType = headers.find(h => h.key.toLowerCase() === 'content-type');
-    if (contentType && contentType.value.includes('multipart/form-data')) {
+    const ctValue = contentType?.value || '';
+    if (ctValue.includes('multipart/form-data') || reqBody.startsWith('[File]')) {
       bodyType = 'file';
       body = '';
       formFields = [];
       selectedFiles = [];
       fileFieldName = 'file';
-    } else if (contentType && contentType.value.includes('application/x-www-form-urlencoded') && reqBody) {
+    } else if (ctValue.includes('application/x-www-form-urlencoded') && reqBody) {
       bodyType = 'form';
       body = '';
       selectedFiles = [];
@@ -783,6 +794,8 @@
       selectedFiles = [];
     }
     serverSide = !!row.server_side;
+    // Remove content-type from restored headers to avoid duplicate when re-sending
+    headers = headers.filter(h => h.key.toLowerCase() !== 'content-type');
   }
 </script>
 
@@ -866,13 +879,20 @@
 
         <!-- Headers Section -->
         <div class="section">
-          <div class="section-header">
-            <span class="section-title">Headers</span>
-            <button class="add-header-btn" onclick={addHeader}>
-              + Add Header
-            </button>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="section-header" class:collapsible={headers.length > 0} onclick={() => { if (headers.length > 0) showHeaders = !showHeaders; }} onkeydown={() => {}}>
+            <span class="section-title" class:collapsed={!showHeaders && headers.length > 0}>
+              <span class="collapse-arrow">{headers.length > 0 ? (showHeaders ? '▾' : '▸') : '▾'}</span> Headers
+              {#if !showHeaders && headers.length > 0}<span class="badge">{headers.length}</span>{/if}
+            </span>
+            {#if showHeaders}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <button class="add-header-btn" onclick={(e) => { e.stopPropagation(); addHeader(); }}>
+                + Add Header
+              </button>
+            {/if}
           </div>
-          {#if headers.length > 0}
+          {#if showHeaders && headers.length > 0}
             <div class="headers-list">
               {#each headers as header, i}
                 <div class="header-row">
@@ -899,13 +919,20 @@
 
         <!-- Query Params Section -->
         <div class="section">
-          <div class="section-header">
-            <span class="section-title">Query Params</span>
-            <button class="add-header-btn" onclick={addQueryParam}>
-              + Add Param
-            </button>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="section-header" class:collapsible={queryParams.length > 0} onclick={() => { if (queryParams.length > 0) showQueryParams = !showQueryParams; }} onkeydown={() => {}}>
+            <span class="section-title" class:collapsed={!showQueryParams && queryParams.length > 0}>
+              <span class="collapse-arrow">{queryParams.length > 0 ? (showQueryParams ? '▾' : '▸') : '▾'}</span> Query Params
+              {#if !showQueryParams && queryParams.length > 0}<span class="badge">{queryParams.length}</span>{/if}
+            </span>
+            {#if showQueryParams}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <button class="add-header-btn" onclick={(e) => { e.stopPropagation(); addQueryParam(); }}>
+                + Add Param
+              </button>
+            {/if}
           </div>
-          {#if queryParams.length > 0}
+          {#if showQueryParams && queryParams.length > 0}
             <div class="headers-list">
               {#each queryParams as param, i}
                 <div class="header-row">
@@ -933,16 +960,23 @@
         <!-- Body Section (conditional) -->
         {#if showBody}
           <div class="section">
-            <div class="section-header">
-              <span class="section-title">Request Body</span>
-              <select bind:value={bodyType} class="body-type-select">
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="section-header collapsible" onclick={() => showRequestBody = !showRequestBody} onkeydown={() => {}}>
+              <span class="section-title" class:collapsed={!showRequestBody}>
+                <span class="collapse-arrow">{showRequestBody ? '▾' : '▸'}</span> Request Body
+              </span>
+              {#if showRequestBody}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <select bind:value={bodyType} class="body-type-select" onclick={(e) => e.stopPropagation()}>
                 <option value="json">JSON</option>
                 <option value="form">Form</option>
                 {#if allowFile}
                   <option value="file">File</option>
                 {/if}
               </select>
+              {/if}
             </div>
+            {#if showRequestBody}
             {#if bodyType === 'json'}
               <textarea
                 bind:this={bodyTextarea}
@@ -953,6 +987,7 @@
                 class:mono-assist={jsonAssist}
                 rows="6"
                 spellcheck="false"
+                style="font-size: {bodyFontSize}rem"
               ></textarea>
               <div class="body-actions">
                 <button class="body-action-btn" onclick={formatJson} title="Format JSON">
@@ -964,13 +999,20 @@
                 <button class="body-action-btn" onclick={() => { body = ''; }} title="Clear body">
                   <span class="body-action-icon">✕</span> Clear <kbd class="btn-kbd">{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Esc</kbd>
                 </button>
-                <label class="assist-toggle" title="Auto-close brackets, quotes, and smart indentation">
-                  <span class="toggle-switch small" class:active={jsonAssist}>
-                    <input type="checkbox" bind:checked={jsonAssist} />
-                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="body-right-controls">
+                  <span class="body-font-controls">
+                    <button class="body-font-btn" disabled={bodyFontSize <= BODY_FONT_MIN} onclick={() => { bodyFontSize = +(bodyFontSize - BODY_FONT_STEP).toFixed(2); }} title="Decrease font size">A−</button>
+                    <button class="body-font-btn" disabled={Math.abs(bodyFontSize - BODY_FONT_DEFAULT) < 0.01} onclick={() => { bodyFontSize = BODY_FONT_DEFAULT; }} title="Reset font size">A</button>
+                    <button class="body-font-btn" disabled={bodyFontSize >= BODY_FONT_MAX} onclick={() => { bodyFontSize = +(bodyFontSize + BODY_FONT_STEP).toFixed(2); }} title="Increase font size">A+</button>
                   </span>
-                  <span class="assist-label">Smart Edit</span>
-                </label>
+                  <label class="assist-toggle" title="Auto-close brackets, quotes, and smart indentation">
+                    <span class="toggle-switch small" class:active={jsonAssist}>
+                      <input type="checkbox" bind:checked={jsonAssist} />
+                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    </span>
+                    <span class="assist-label">Smart Edit</span>
+                  </label>
+                </span>
               </div>
             {:else if bodyType === 'form'}
               <div class="headers-list">
@@ -994,9 +1036,16 @@
                   </div>
                 {/each}
               </div>
-              <button class="add-header-btn add-field-btn" onclick={addFormField}>
-                + Add Field
-              </button>
+              <div class="form-actions">
+                <button class="add-header-btn add-field-btn" onclick={addFormField}>
+                  + Add Field
+                </button>
+                {#if formFields.length > 0}
+                  <button class="body-action-btn" onclick={() => { formFields = []; }}>
+                    <span class="body-action-icon">✕</span> Clear
+                  </button>
+                {/if}
+              </div>
             {:else}
               <div class="file-upload-section">
                 <div class="file-field-row">
@@ -1042,7 +1091,13 @@
                     <span class="file-placeholder">Click to select files</span>
                   {/if}
                 </div>
+                {#if selectedFiles.length > 0}
+                  <button class="body-action-btn file-clear-btn" onclick={() => { selectedFiles = []; fileFieldName = 'file'; }}>
+                    <span class="body-action-icon">✕</span> Clear
+                  </button>
+                {/if}
               </div>
+            {/if}
             {/if}
           </div>
         {/if}
@@ -1106,8 +1161,11 @@
         <!-- Success Response Section -->
         {#if responseStatus && !errorDebug}
           <div class="section">
-            <div class="section-header">
-              <span class="section-title">Response</span>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="section-header collapsible" onclick={() => showResponse = !showResponse} onkeydown={() => {}}>
+              <span class="section-title" class:collapsed={!showResponse}>
+                <span class="collapse-arrow">{showResponse ? '▾' : '▸'}</span> Response
+              </span>
               <span class="response-status-group">
                 {#if responseDuration !== null}
                   <span class="response-duration">{responseDuration}ms</span>
@@ -1118,6 +1176,7 @@
               </span>
             </div>
 
+            {#if showResponse}
             <div class="response-tabs">
               <button
                 class="tab-btn"
@@ -1146,19 +1205,25 @@
                 </button>
               </div>
             {/if}
+            {/if}
           </div>
         {/if}
 
         <div class="section">
-          <div class="section-header">
-            <span class="section-title">cURL Command</span>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="section-header collapsible" onclick={() => showCurl = !showCurl} onkeydown={() => {}}>
+            <span class="section-title" class:collapsed={!showCurl}>
+              <span class="collapse-arrow">{showCurl ? '▾' : '▸'}</span> cURL Command
+            </span>
           </div>
-          <div class="response-pre-wrapper">
-            <pre class="curl-output">{curlCommand}</pre>
-            <button class="response-copy-btn" onclick={() => copyPanelText(curlCommand, 'curl')} title="Copy cURL command">
-              {copiedPanel === 'curl' ? '✓' : '⧉'}
-            </button>
-          </div>
+          {#if showCurl}
+            <div class="response-pre-wrapper">
+              <pre class="curl-output">{curlCommand}</pre>
+              <button class="response-copy-btn" onclick={() => copyPanelText(curlCommand, 'curl')} title="Copy cURL command">
+                {copiedPanel === 'curl' ? '✓' : '⧉'}
+              </button>
+            </div>
+          {/if}
         </div>
 
         <div class="hint">
@@ -1176,6 +1241,8 @@
     height: 100vh;
     width: 100%;
     overflow: hidden;
+    box-sizing: border-box;
+    border: 1px solid #32324a;
   }
 
   .app-layout.resizing {
@@ -1236,7 +1303,7 @@
   .main-content {
     max-width: 900px;
     margin: 0 auto;
-    padding: 1.5rem 2rem 2rem;
+    padding: 0.75rem 1rem 1rem;
   }
 
   /* Header */
@@ -1521,7 +1588,7 @@
 
   /* Sections */
   .section {
-    margin-bottom: 1.25rem;
+    margin-bottom: 0.6rem;
   }
 
   .section-header {
@@ -1711,13 +1778,48 @@
     gap: 0.35rem;
     cursor: pointer;
     user-select: none;
-    margin-left: auto;
   }
 
   .assist-label {
     font-size: 0.7rem;
     color: #888;
     font-weight: 500;
+  }
+
+  .body-right-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-left: auto;
+  }
+
+  .body-font-controls {
+    display: flex;
+    gap: 0.2rem;
+  }
+
+  .body-font-btn {
+    background: transparent;
+    border: 1px solid #4a4a5a;
+    color: #888;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.15rem 0.45rem;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1;
+  }
+
+  .body-font-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #ccc;
+  }
+
+  .body-font-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
   }
 
   .toggle-switch.small .toggle-track {
@@ -1738,7 +1840,19 @@
   }
 
   .add-field-btn {
+    margin-top: 0;
+  }
+
+  .form-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin-top: 0.4rem;
+  }
+
+  .file-clear-btn {
+    margin-top: 0.4rem;
+    align-self: flex-start;
   }
 
   .file-upload-section {
@@ -2034,6 +2148,23 @@
     resize: vertical;
   }
 
+  .collapsible {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .collapse-arrow {
+    font-size: 1.5rem;
+    display: inline-block;
+    width: 1.2rem;
+    line-height: 1;
+    vertical-align: middle;
+  }
+
+  .section-title.collapsed {
+    opacity: 0.5;
+  }
+
   .curl-output {
     background: #2e2e4d;
     border: 1px solid #3a3a4a;
@@ -2072,7 +2203,7 @@
 
   /* Light mode overrides */
   .light-theme .request-bar {
-    background: #e2e2ee;
+    background: #ececf4;
     border-color: #a0a0b4;
   }
 
@@ -2091,16 +2222,22 @@
   }
 
   .light-theme .header-input,
-  .light-theme .body-input,
-  .light-theme .response-body {
-    background: #e2e2ee;
+  .light-theme .body-input {
+    background: #ececf4;
     border-color: #a0a0b4;
+    color: #1a1a2a;
+  }
+
+  .light-theme .response-body {
+    background: #e8e8f2;
+    border-color: #a0a0b4;
+    color: #111;
   }
 
   .light-theme .curl-output {
-    background: #e2e2ee;
+    background: #e8e8f2;
     border-color: #a0a0b4;
-    color: #2a2a3a;
+    color: #111;
   }
 
   .light-theme .response-copy-btn {
@@ -2199,8 +2336,8 @@
   }
 
   .light-theme .debug-body {
-    background: #e2e2ee;
-    color: #2a2a3a;
+    background: #e8e8f2;
+    color: #111;
   }
 
   .light-theme kbd {
@@ -2231,9 +2368,23 @@
     background: #ccccda;
   }
 
+  .app-layout.light-theme {
+    border-color: #a0a0b4;
+  }
+
   .light-theme .resize-handle:hover,
   .light-theme.resizing .resize-handle {
     background: rgba(100, 108, 255, 0.12);
+  }
+
+  .light-theme .body-font-btn {
+    border-color: #a0a0b4;
+    color: #555;
+  }
+
+  .light-theme .body-font-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #222;
   }
 
   .light-theme .resize-grip {
