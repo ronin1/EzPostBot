@@ -1,6 +1,6 @@
 # 👾 EzPostBot
 
-![EzPostBot Screenshot](md_img/EzPostBot_Img.png)
+![EzPostBot Screenshot](md_img/ezbot_screen.png)
 
 EzPostBot is a Postman-like tool that runs in your browser to test API connectivity, including CORS requests.
 
