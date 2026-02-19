@@ -272,7 +272,36 @@
     return parts.join(' \\\n  ');
   });
 
-  const isDarkMode = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let themeMode = $state(localStorage.getItem('theme') || 'auto');
+
+  function getEffectiveDark() {
+    if (themeMode === 'dark') return true;
+    if (themeMode === 'light') return false;
+    return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  let isDarkMode = $state(getEffectiveDark());
+
+  $effect(() => {
+    const mode = themeMode;
+    localStorage.setItem('theme', mode);
+    isDarkMode = getEffectiveDark();
+    const html = document.documentElement;
+    html.classList.toggle('light', !isDarkMode);
+    html.classList.toggle('dark', isDarkMode);
+  });
+
+  function cycleTheme() {
+    const osIsDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (themeMode === 'auto') themeMode = osIsDark ? 'light' : 'dark';
+    else themeMode = 'auto';
+  }
+
+  function getThemeIcon(mode) {
+    if (mode === 'light') return '☀️';
+    if (mode === 'dark') return '🌙';
+    return '🔄';
+  }
 
   function getMethodColor(m) {
     if (isDarkMode) {
@@ -752,10 +781,10 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="app-layout" class:resizing={isResizing}>
+<div class="app-layout" class:resizing={isResizing} class:light-theme={!isDarkMode}>
   {#if drawerOpen}
     <div class="drawer-pane" style="width: {drawerWidth}px; min-width: {MIN_DRAWER}px">
-      <HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} />
+      <HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} darkMode={isDarkMode} />
     </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-handle" onmousedown={startResize}>
@@ -784,6 +813,10 @@
               <h1>👾 EzPostBot</h1>
               <p class="subtitle">Test API endpoints directly from your browser</p>
             </div>
+            <button class="theme-toggle" onclick={cycleTheme} title={`Theme: ${themeMode}`}>
+              <span class="theme-icon">{getThemeIcon(themeMode)}</span>
+              <span class="theme-label">{themeMode === 'auto' ? 'Auto' : themeMode === 'light' ? 'Light' : 'Dark'}</span>
+            </button>
           </div>
         </div>
 
@@ -1243,6 +1276,38 @@
   .history-toggle:hover {
     border-color: #646cff;
     color: #fff;
+  }
+
+  .theme-toggle {
+    background: #2e2e4d;
+    border: 1px solid #3a3a4a;
+    color: #aaa;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+    margin-left: auto;
+    margin-top: 0.15rem;
+  }
+
+  .theme-toggle:hover {
+    border-color: #646cff;
+    color: #fff;
+  }
+
+  .theme-icon {
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+
+  .theme-label {
+    text-transform: capitalize;
   }
 
   /* Request bar */
@@ -1998,162 +2063,171 @@
   }
 
   /* Light mode overrides */
-  @media (prefers-color-scheme: light) {
-    .request-bar {
-      background: #e2e2ee;
-      border-color: #a0a0b4;
-    }
+  .light-theme .request-bar {
+    background: #e2e2ee;
+    border-color: #a0a0b4;
+  }
 
-    .method-select {
-      background: #dadaea;
-      border-right-color: #a0a0b4;
-      color: inherit;
-    }
+  .light-theme .method-select {
+    background: #dadaea;
+    border-right-color: #a0a0b4;
+    color: inherit;
+  }
 
-    .url-input::placeholder {
-      color: #888;
-    }
+  .light-theme .url-input::placeholder {
+    color: #888;
+  }
 
-    .url-query-preview {
-      color: #7a7a90;
-    }
+  .light-theme .url-query-preview {
+    color: #7a7a90;
+  }
 
-    .header-input,
-    .body-input,
-    .response-body {
-      background: #e2e2ee;
-      border-color: #a0a0b4;
-    }
+  .light-theme .header-input,
+  .light-theme .body-input,
+  .light-theme .response-body {
+    background: #e2e2ee;
+    border-color: #a0a0b4;
+  }
 
-    .curl-output {
-      background: #e2e2ee;
-      border-color: #a0a0b4;
-      color: #2a2a3a;
-    }
+  .light-theme .curl-output {
+    background: #e2e2ee;
+    border-color: #a0a0b4;
+    color: #2a2a3a;
+  }
 
-    .response-copy-btn {
-      background: #ccccd8;
-      border-color: #999;
-      color: #333;
-    }
+  .light-theme .response-copy-btn {
+    background: #ccccd8;
+    border-color: #999;
+    color: #333;
+  }
 
-    .response-copy-btn:hover {
-      background: #c0c0d0;
-      border-color: #646cff;
-      color: #111;
-    }
+  .light-theme .response-copy-btn:hover {
+    background: #c0c0d0;
+    border-color: #646cff;
+    color: #111;
+  }
 
-    .body-type-select {
-      background: #dadaea;
-      border-color: #a0a0b4;
-      color: #2a2a3a;
-    }
+  .light-theme .body-type-select {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #2a2a3a;
+  }
 
-    .body-action-btn {
-      border-color: #a0a0b4;
-      color: #333;
-      background: #dadaea;
-    }
+  .light-theme .body-action-btn {
+    border-color: #a0a0b4;
+    color: #333;
+    background: #dadaea;
+  }
 
-    .body-action-btn:hover {
-      color: #111;
-      background: #d0d0e0;
-    }
+  .light-theme .body-action-btn:hover {
+    color: #111;
+    background: #d0d0e0;
+  }
 
-    .toggle-track {
-      background: #a0a0b4;
-    }
+  .light-theme .toggle-track {
+    background: #a0a0b4;
+  }
 
-    .toggle-thumb {
-      background: #fff;
-    }
+  .light-theme .toggle-thumb {
+    background: #fff;
+  }
 
-    .toggle-text {
-      color: #333;
-    }
+  .light-theme .toggle-text {
+    color: #333;
+  }
 
-    .toggle-hint {
-      color: #444;
-    }
+  .light-theme .toggle-hint {
+    color: #444;
+  }
 
-    .toggle-hint::after {
-      background: #e2e2ee;
-      color: #2a2a3a;
-      border-color: #a0a0b4;
-    }
+  .light-theme .toggle-hint::after {
+    background: #e2e2ee;
+    color: #2a2a3a;
+    border-color: #a0a0b4;
+  }
 
-    .file-dropzone {
-      background: #e2e2ee;
-      border-color: #a0a0b4;
-    }
+  .light-theme .file-dropzone {
+    background: #e2e2ee;
+    border-color: #a0a0b4;
+  }
 
-    .file-dropzone:hover {
-      background: rgba(100, 108, 255, 0.07);
-      border-color: #646cff;
-    }
+  .light-theme .file-dropzone:hover {
+    background: rgba(100, 108, 255, 0.07);
+    border-color: #646cff;
+  }
 
-    .file-item {
-      background: #dadaea;
-      border-color: #a0a0b4;
-    }
+  .light-theme .file-item {
+    background: #dadaea;
+    border-color: #a0a0b4;
+  }
 
-    .file-name {
-      color: #2a2a3a;
-    }
+  .light-theme .file-name {
+    color: #2a2a3a;
+  }
 
-    .response-tabs {
-      border-bottom-color: #a0a0b4;
-    }
+  .light-theme .response-tabs {
+    border-bottom-color: #a0a0b4;
+  }
 
-    .response-body {
-      border-color: #a0a0b4;
-    }
+  .light-theme .response-body {
+    border-color: #a0a0b4;
+  }
 
-    .badge {
-      background: #c8c8d6;
-    }
+  .light-theme .badge {
+    background: #c8c8d6;
+  }
 
-    .error-box {
-      background: rgba(249, 62, 62, 0.07);
-    }
+  .light-theme .error-box {
+    background: rgba(249, 62, 62, 0.07);
+  }
 
-    .debug-panel {
-      border-color: #f93e3e55;
-    }
+  .light-theme .debug-panel {
+    border-color: #f93e3e55;
+  }
 
-    .debug-tabs {
-      border-bottom-color: #a0a0b4;
-      background: rgba(249, 62, 62, 0.04);
-    }
+  .light-theme .debug-tabs {
+    border-bottom-color: #a0a0b4;
+    background: rgba(249, 62, 62, 0.04);
+  }
 
-    .debug-body {
-      background: #e2e2ee;
-      color: #2a2a3a;
-    }
+  .light-theme .debug-body {
+    background: #e2e2ee;
+    color: #2a2a3a;
+  }
 
-    kbd {
-      background: #d0d0dc;
-      border-color: #a0a0b4;
-    }
+  .light-theme kbd {
+    background: #d0d0dc;
+    border-color: #a0a0b4;
+  }
 
-    .history-toggle {
-      background: #dadaea;
-      border-color: #a0a0b4;
-      color: #333;
-    }
+  .light-theme .history-toggle {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #333;
+  }
 
-    .history-toggle:hover {
-      color: #111;
-      background: #ccccda;
-    }
+  .light-theme .history-toggle:hover {
+    color: #111;
+    background: #ccccda;
+  }
 
-    .resize-handle:hover,
-    .resizing .resize-handle {
-      background: rgba(100, 108, 255, 0.12);
-    }
+  .light-theme .theme-toggle {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #333;
+  }
 
-    .resize-grip {
-      background: #999;
-    }
+  .light-theme .theme-toggle:hover {
+    color: #111;
+    background: #ccccda;
+  }
+
+  .light-theme .resize-handle:hover,
+  .light-theme.resizing .resize-handle {
+    background: rgba(100, 108, 255, 0.12);
+  }
+
+  .light-theme .resize-grip {
+    background: #999;
   }
 </style>

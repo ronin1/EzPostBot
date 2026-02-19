@@ -1,7 +1,7 @@
 <script>
   import { queryRequests, deleteRequest, clearAllRequests } from './db.js';
 
-  let { open = $bindable(false), onReplay = () => {} } = $props();
+  let { open = $bindable(false), onReplay = () => {}, darkMode = true } = $props();
 
   // Filters
   let filterMethods = $state([]);
@@ -109,10 +109,8 @@
     await refresh();
   }
 
-  const isDarkMode = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
-
   function getMethodColor(m) {
-    if (isDarkMode) {
+    if (darkMode) {
       const colors = {
         GET: '#8ccfff', POST: '#80eebc', PUT: '#ffc86a',
         PATCH: '#85f5de', DELETE: '#ff8080', HEAD: '#c880ff', OPTIONS: '#6aaaf0',
@@ -185,7 +183,7 @@
   }
 </script>
 
-<div class="panel">
+<div class="panel" class:light-theme={!darkMode}>
   <div class="panel-header">
     <h2>History</h2>
     <button class="close-btn" onclick={() => open = false} title="Hide history">
@@ -820,129 +818,127 @@
   }
 
   /* Light mode */
-  @media (prefers-color-scheme: light) {
-    .panel {
-      background: #e2e2ee;
-      border-right-color: #a0a0b4;
-    }
+  .panel.light-theme {
+    background: #e2e2ee;
+    border-right-color: #a0a0b4;
+  }
 
-    .panel-header {
-      border-bottom-color: #a0a0b4;
-    }
+  .light-theme .panel-header {
+    border-bottom-color: #a0a0b4;
+  }
 
-    .close-btn {
-      border-color: #a0a0b4;
-      color: #555;
-    }
+  .light-theme .close-btn {
+    border-color: #a0a0b4;
+    color: #555;
+  }
 
-    .close-btn:hover {
-      color: #111;
-    }
+  .light-theme .close-btn:hover {
+    color: #111;
+  }
 
-    .filters {
-      border-bottom-color: #a0a0b4;
-    }
+  .light-theme .filters {
+    border-bottom-color: #a0a0b4;
+  }
 
-    .filter-label {
-      color: #555;
-    }
+  .light-theme .filter-label {
+    color: #555;
+  }
 
-    .filter-input {
-      background: #dadaea;
-      border-color: #a0a0b4;
-      color: #2a2a3a;
-    }
+  .light-theme .filter-input {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #2a2a3a;
+  }
 
-    .method-chip {
-      border-color: #a0a0b4;
-      font-weight: 700;
-      background: rgba(255, 255, 255, 0.5);
-    }
+  .light-theme .method-chip {
+    border-color: #a0a0b4;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.5);
+  }
 
-    .method-chip.selected {
-      background: color-mix(in srgb, var(--method-color) 20%, white);
-    }
+  .light-theme .method-chip.selected {
+    background: color-mix(in srgb, var(--method-color) 20%, white);
+  }
 
-    .item-method {
-      background: #6a6a80;
-      color: #fff !important;
-      padding: 0.1rem 0.35rem;
-      border-radius: 3px;
-      filter: none;
-    }
+  .light-theme .item-method {
+    background: #6a6a80;
+    color: #fff !important;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    filter: none;
+  }
 
-    .item-status {
-      background: #6a6a80;
-      color: #fff !important;
-      padding: 0.1rem 0.3rem;
-      border-radius: 3px;
-      filter: none;
-    }
+  .light-theme .item-status {
+    background: #6a6a80;
+    color: #fff !important;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    filter: none;
+  }
 
-    .sort-btn, .reset-btn {
-      border-color: #a0a0b4;
-      color: #444;
-      background: #dadaea;
-    }
+  .light-theme .sort-btn, .light-theme .reset-btn {
+    border-color: #a0a0b4;
+    color: #444;
+    background: #dadaea;
+  }
 
-    .sort-btn:hover, .reset-btn:hover {
-      border-color: #646cff;
-      color: #111;
-      background: #d0d0e0;
-    }
+  .light-theme .sort-btn:hover, .light-theme .reset-btn:hover {
+    border-color: #646cff;
+    color: #111;
+    background: #d0d0e0;
+  }
 
-    .clear-all-btn {
-      border-color: #f93e3e88;
-    }
+  .light-theme .clear-all-btn {
+    border-color: #f93e3e88;
+  }
 
-    .history-item {
-      border-bottom-color: #a0a0b4;
-    }
+  .light-theme .history-item {
+    border-bottom-color: #a0a0b4;
+  }
 
-    .item-summary:hover {
-      background: rgba(100, 108, 255, 0.06);
-    }
+  .light-theme .item-summary:hover {
+    background: rgba(100, 108, 255, 0.06);
+  }
 
-    .item-url {
-      color: #2a2a3a;
-    }
+  .light-theme .item-url {
+    color: #2a2a3a;
+  }
 
-    .item-details {
-      background: rgba(200, 200, 220, 0.4);
-      border-top-color: #a0a0b4;
-    }
+  .light-theme .item-details {
+    background: rgba(200, 200, 220, 0.4);
+    border-top-color: #a0a0b4;
+  }
 
-    .detail-tabs {
-      border-bottom-color: #a0a0b4;
-    }
+  .light-theme .detail-tabs {
+    border-bottom-color: #a0a0b4;
+  }
 
-    .detail-tab {
-      color: #444;
-    }
+  .light-theme .detail-tab {
+    color: #444;
+  }
 
-    .detail-tab:hover {
-      color: #111;
-    }
+  .light-theme .detail-tab:hover {
+    color: #111;
+  }
 
-    .detail-pre {
-      background: #dadaea;
-      border-color: #a0a0b4;
-      color: #2a2a3a;
-    }
+  .light-theme .detail-pre {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #2a2a3a;
+  }
 
-    .copy-btn {
-      background: #ccccd8;
-      border-color: #999;
-      color: #333;
-    }
+  .light-theme .copy-btn {
+    background: #ccccd8;
+    border-color: #999;
+    color: #333;
+  }
 
-    .copy-btn:hover {
-      background: #c0c0d0;
-      color: #111;
-    }
+  .light-theme .copy-btn:hover {
+    background: #c0c0d0;
+    color: #111;
+  }
 
-    .panel-footer {
-      border-top-color: #a0a0b4;
-    }
+  .light-theme .panel-footer {
+    border-top-color: #a0a0b4;
   }
 </style>

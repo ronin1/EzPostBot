@@ -34,9 +34,12 @@ html, body {
   flex-direction: column;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #2a3a4a;
-    background-color: #d8d8e6;
-  }
+html.light {
+  color: #2a3a4a;
+  background-color: #d8d8e6;
+}
+
+html.dark {
+  color: rgba(255, 255, 255, 0.9);
+  background-color: #23233a;
 }
