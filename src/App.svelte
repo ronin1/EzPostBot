@@ -517,6 +517,7 @@
           responseHeaders: null, responseBody: null,
           error: data.error, durationMs,
           diagnosis: diagText, preflight: null,
+          serverSide: true,
         });
         drawerRef?.refresh();
         return;
@@ -553,6 +554,7 @@
           responseHeaders, responseBody: response,
           error: `HTTP ${data.status} ${data.statusText}`, durationMs,
           diagnosis: diagText, preflight: '',
+          serverSide: true,
         });
       } else {
         await saveRequest({
@@ -561,6 +563,7 @@
           responseStatus: data.status, responseStatusText: data.statusText,
           responseHeaders, responseBody: response,
           error: null, durationMs, diagnosis: null, preflight: null,
+          serverSide: true,
         });
       }
       drawerRef?.refresh();
@@ -626,6 +629,7 @@
           durationMs,
           diagnosis: diagText,
           preflight: '',
+          serverSide: false,
         });
       } else {
         await saveRequest({
@@ -642,6 +646,7 @@
           durationMs,
           diagnosis: null,
           preflight: null,
+          serverSide: false,
         });
       }
       drawerRef?.refresh();
@@ -693,6 +698,7 @@
         durationMs,
         diagnosis: diagText,
         preflight: preflightDebug || null,
+        serverSide: false,
       });
       drawerRef?.refresh();
     }
@@ -776,6 +782,7 @@
       formFields = [];
       selectedFiles = [];
     }
+    serverSide = !!row.server_side;
   }
 </script>
 

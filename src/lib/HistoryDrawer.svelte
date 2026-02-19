@@ -8,6 +8,8 @@
   let filterUrl = $state('');
   let filterStatusMin = $state('');
   let filterStatusMax = $state('');
+  let filterServerSide = $state('');
+  let sortBy = $state('timestamp');
   let sortDir = $state('DESC');
 
   // Pagination
@@ -60,7 +62,7 @@
   });
 
   $effect(() => {
-    filterMethods; filterUrl; filterStatusMin; filterStatusMax; page; pageSize; sortDir; open;
+    filterMethods; filterUrl; filterStatusMin; filterStatusMax; filterServerSide; page; pageSize; sortBy; sortDir; open;
     refresh();
   });
 
@@ -70,8 +72,10 @@
       urlFilter: filterUrl || undefined,
       statusMin: filterStatusMin || undefined,
       statusMax: filterStatusMax || undefined,
+      serverSideFilter: filterServerSide || undefined,
       page,
       pageSize,
+      sortBy,
       sortDir,
     });
     rows = result.rows;
@@ -104,7 +108,9 @@
     filterUrl = '';
     filterStatusMin = '';
     filterStatusMax = '';
+    filterServerSide = '';
     page = 1;
+    sortBy = 'timestamp';
     sortDir = 'DESC';
     await refresh();
   }
@@ -240,12 +246,34 @@
         class="filter-input"
       />
     </div>
-    <div class="filter-actions">
-      <button class="sort-btn" onclick={() => sortDir = sortDir === 'DESC' ? 'ASC' : 'DESC'} title="Toggle sort order">
-        {sortDir === 'DESC' ? 'Newest first' : 'Oldest first'}
-      </button>
+    <div class="filter-group mode-row">
+      <div class="mode-left">
+        <span class="filter-label">Mode</span>
+        <div class="mode-chips">
+          <button class="mode-chip" class:selected={filterServerSide === ''} onclick={() => filterServerSide = ''}>All</button>
+          <button class="mode-chip" class:selected={filterServerSide === '0'} onclick={() => filterServerSide = '0'}>Client</button>
+          <button class="mode-chip" class:selected={filterServerSide === '1'} onclick={() => filterServerSide = '1'}>Server</button>
+        </div>
+      </div>
       <button class="reset-btn" onclick={resetFilters}>Reset Filters</button>
     </div>
+  </div>
+
+  <!-- Sort row -->
+  <div class="sort-row">
+    <button class="sort-col-btn sort-verb" class:active={sortBy === 'method'} onclick={() => { if (sortBy === 'method') sortDir = sortDir === 'ASC' ? 'DESC' : 'ASC'; else { sortBy = 'method'; sortDir = 'ASC'; } page = 1; }}>
+      Verb {sortBy === 'method' ? (sortDir === 'ASC' ? '↑' : '↓') : ''}
+    </button>
+    <div class="sort-sep"></div>
+    <button class="sort-col-btn sort-url" class:active={sortBy === 'url'} onclick={() => { if (sortBy === 'url') sortDir = sortDir === 'ASC' ? 'DESC' : 'ASC'; else { sortBy = 'url'; sortDir = 'ASC'; } page = 1; }}>
+      URL {sortBy === 'url' ? (sortDir === 'ASC' ? '↑' : '↓') : ''}
+    </button>
+    <div class="sort-sep"></div>
+    <button class="sort-col-btn sort-date" class:active={sortBy === 'timestamp'} onclick={() => { if (sortBy === 'timestamp') sortDir = sortDir === 'DESC' ? 'ASC' : 'DESC'; else { sortBy = 'timestamp'; sortDir = 'DESC'; } page = 1; }}>
+      Date {sortBy === 'timestamp' ? (sortDir === 'DESC' ? '↓' : '↑') : ''}
+    </button>
+    <div class="sort-sep"></div>
+    <span class="sort-label">⇅</span>
   </div>
 
   <!-- Results -->
@@ -258,6 +286,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="item-summary" onclick={() => toggleExpand(row.id)} onkeydown={() => {}}>
           <span class="item-method" style="color: {getMethodColor(row.method)}">{row.method}</span>
+          {#if row.server_side}<span class="item-mode-badge server">S</span>{:else}<span class="item-mode-badge client">C</span>{/if}
           <span class="item-url" title={row.url}>{truncateUrl(row.url)}</span>
           <span class="item-status" style="color: {getStatusColor(row.response_status)}">
             {row.response_status || 'ERR'}
@@ -269,9 +298,10 @@
         </div>
         {#if expandedId === row.id}
           <div class="item-details">
-            {#if row.duration_ms != null}
-              <div class="detail-row"><strong>Duration:</strong> {row.duration_ms}ms</div>
-            {/if}
+            <div class="detail-row">
+              <strong>Mode:</strong> {row.server_side ? 'Server-side' : 'Client-side'}
+              {#if row.duration_ms != null}&nbsp;·&nbsp;<strong>Duration:</strong> {row.duration_ms}ms{/if}
+            </div>
 
             <div class="detail-tabs">
               <button class="detail-tab" class:active={getItemTab(row.id) === 'response'} onclick={() => setItemTab(row.id, 'response')}>
@@ -468,6 +498,37 @@
     border-color: var(--method-color, #888);
   }
 
+  .mode-chips {
+    display: flex;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+  }
+
+  .mode-chip {
+    background: transparent;
+    border: 1px solid #3a3a4a;
+    color: #aaa;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    opacity: 0.75;
+  }
+
+  .mode-chip:hover {
+    opacity: 0.8;
+    border-color: #646cff;
+  }
+
+  .mode-chip.selected {
+    opacity: 1;
+    background: rgba(100, 108, 255, 0.15);
+    border-color: #646cff;
+    color: #aac0ff;
+  }
+
   .filter-group {
     display: flex;
     flex-direction: column;
@@ -491,6 +552,7 @@
     color: inherit;
     outline: none;
     font-family: 'SF Mono', 'Fira Code', monospace;
+    color-scheme: dark;
     width: 100%;
     box-sizing: border-box;
   }
@@ -515,12 +577,19 @@
     font-size: 0.75rem;
   }
 
-  .filter-actions {
-    display: flex;
-    gap: 0.4rem;
+  .mode-row {
+    flex-direction: row !important;
+    align-items: center;
+    justify-content: space-between;
   }
 
-  .sort-btn, .reset-btn {
+  .mode-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .reset-btn {
     background: transparent;
     border: 1px solid #4a4a5a;
     color: #aaa;
@@ -529,11 +598,71 @@
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
+    flex-shrink: 0;
+    align-self: flex-end;
   }
 
-  .sort-btn:hover, .reset-btn:hover {
+  .reset-btn:hover {
     border-color: #646cff;
     color: #fff;
+  }
+
+  .sort-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid #32324a;
+    flex-shrink: 0;
+  }
+
+  .sort-label {
+    font-size: 0.8rem;
+    color: #666;
+    padding: 0.2rem 0.45rem;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .sort-sep {
+    width: 1px;
+    background: #32324a;
+  }
+
+  .sort-col-btn {
+    background: #2e2e4d;
+    border: none;
+    color: #777;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .sort-verb {
+    width: 80px;
+    flex-shrink: 0;
+  }
+
+  .sort-url {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sort-date {
+    width: 160px;
+    flex-shrink: 0;
+  }
+
+  .sort-col-btn:hover {
+    color: #ccc;
+    background: rgba(100, 108, 255, 0.06);
+  }
+
+  .sort-col-btn.active {
+    color: #646cff;
+    background: rgba(100, 108, 255, 0.08);
   }
 
   /* Results */
@@ -556,7 +685,7 @@
 
   .item-summary {
     display: grid;
-    grid-template-columns: 50px minmax(0, 1fr) auto auto 24px;
+    grid-template-columns: 50px auto minmax(0, 1fr) auto auto 24px;
     gap: 0.35rem;
     align-items: center;
     padding: 0.45rem 1rem;
@@ -576,6 +705,25 @@
     background: #23233a;
     padding: 0.1rem 0.35rem;
     border-radius: 3px;
+  }
+
+  .item-mode-badge {
+    font-size: 0.55rem;
+    font-weight: 700;
+    padding: 0.05rem 0.25rem;
+    border-radius: 3px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    flex-shrink: 0;
+  }
+
+  .item-mode-badge.server {
+    background: rgba(100, 108, 255, 0.25);
+    color: #99aaff;
+  }
+
+  .item-mode-badge.client {
+    background: rgba(73, 204, 144, 0.2);
+    color: #70c8a0;
   }
 
   .item-url {
@@ -854,6 +1002,7 @@
     background: #dadaea;
     border-color: #a0a0b4;
     color: #2a2a3a;
+    color-scheme: light;
   }
 
   .light-theme .method-chip {
@@ -864,6 +1013,28 @@
 
   .light-theme .method-chip.selected {
     background: color-mix(in srgb, var(--method-color) 20%, white);
+  }
+
+  .light-theme .mode-chip {
+    border-color: #a0a0b4;
+    color: #444;
+    opacity: 0.8;
+  }
+
+  .light-theme .mode-chip.selected {
+    background: rgba(100, 108, 255, 0.12);
+    border-color: #646cff;
+    color: #333;
+  }
+
+  .light-theme .item-mode-badge.server {
+    background: rgba(100, 108, 255, 0.15);
+    color: #4a5aaa;
+  }
+
+  .light-theme .item-mode-badge.client {
+    background: rgba(73, 204, 144, 0.15);
+    color: #2a7a50;
   }
 
   .light-theme .item-method {
@@ -882,16 +1053,43 @@
     filter: none;
   }
 
-  .light-theme .sort-btn, .light-theme .reset-btn {
+  .light-theme .reset-btn {
     border-color: #a0a0b4;
     color: #444;
     background: #dadaea;
   }
 
-  .light-theme .sort-btn:hover, .light-theme .reset-btn:hover {
+  .light-theme .reset-btn:hover {
     border-color: #646cff;
     color: #111;
     background: #d0d0e0;
+  }
+
+  .light-theme .sort-row {
+    border-bottom-color: #a0a0b4;
+  }
+
+  .light-theme .sort-label {
+    color: #888;
+  }
+
+  .light-theme .sort-sep {
+    background: #a0a0b4;
+  }
+
+  .light-theme .sort-col-btn {
+    background: #dadaea;
+    color: #666;
+  }
+
+  .light-theme .sort-col-btn:hover {
+    color: #222;
+    background: rgba(100, 108, 255, 0.06);
+  }
+
+  .light-theme .sort-col-btn.active {
+    color: #3338a8;
+    background: rgba(100, 108, 255, 0.18);
   }
 
   .light-theme .clear-all-btn {
@@ -942,6 +1140,10 @@
   .light-theme .copy-btn:hover {
     background: #c0c0d0;
     color: #111;
+  }
+
+  .light-theme .detail-row {
+    color: #444;
   }
 
   .light-theme .panel-footer {
