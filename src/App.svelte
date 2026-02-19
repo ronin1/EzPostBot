@@ -298,9 +298,9 @@
   }
 
   function getThemeIcon(mode) {
-    if (mode === 'light') return '☀️';
-    if (mode === 'dark') return '🌙';
-    return '🔄';
+    if (mode === 'light') return '○';
+    if (mode === 'dark') return '●';
+    return '◐';
   }
 
   function getMethodColor(m) {
@@ -1694,7 +1694,7 @@
 
   .btn-kbd {
     font-size: 0.6rem;
-    opacity: 0.5;
+    opacity: 0.7;
     margin-left: 0.15rem;
   }
 
@@ -2048,18 +2048,19 @@
   .hint {
     text-align: center;
     font-size: 0.7rem;
-    color: #555;
+    color: #9090a8;
     margin-top: 1.5rem;
     padding-bottom: 1rem;
   }
 
   kbd {
     background: #404060;
-    border: 1px solid #4a4a5a;
+    border: 1px solid #5a5a70;
     border-radius: 4px;
     padding: 0.1rem 0.3rem;
     font-size: 0.65rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #d0d0e0;
   }
 
   /* Light mode overrides */
@@ -2198,6 +2199,7 @@
   .light-theme kbd {
     background: #d0d0dc;
     border-color: #a0a0b4;
+    color: #444;
   }
 
   .light-theme .history-toggle {
@@ -2229,5 +2231,17 @@
 
   .light-theme .resize-grip {
     background: #999;
+  }
+
+  .light-theme .hint {
+    color: #666;
+  }
+
+  .light-theme .section-title {
+    color: #444;
+  }
+
+  .light-theme .badge {
+    color: #333;
   }
 </style>

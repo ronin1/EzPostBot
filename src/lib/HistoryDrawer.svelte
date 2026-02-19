@@ -573,6 +573,9 @@
     font-weight: 700;
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 0.68rem;
+    background: #23233a;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
   }
 
   .item-url {
@@ -589,6 +592,9 @@
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 0.68rem;
     text-align: right;
+    background: #23233a;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
   }
 
   .item-time {
@@ -861,16 +867,16 @@
   }
 
   .light-theme .item-method {
-    background: #6a6a80;
-    color: #fff !important;
+    background: #c8c8d8;
+    color: #2a2a3a !important;
     padding: 0.1rem 0.35rem;
     border-radius: 3px;
     filter: none;
   }
 
   .light-theme .item-status {
-    background: #6a6a80;
-    color: #fff !important;
+    background: #c8c8d8;
+    color: #2a2a3a !important;
     padding: 0.1rem 0.3rem;
     border-radius: 3px;
     filter: none;
