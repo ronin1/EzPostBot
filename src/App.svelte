@@ -5,6 +5,11 @@
   let url = $state('https://io.dev.clarityrcm.com/api/peripheral/health');
   let method = $state('GET');
   let body = $state('');
+  let bodyType = $state('json'); // 'json' | 'form' | 'file'
+  let formFields = $state([]);
+  let selectedFiles = $state([]);
+  let fileFieldName = $state('file');
+  let fileInputEl = $state(null);
   let headers = $state([]);
   let queryParams = $state([]);
   let response = $state(null);
@@ -89,6 +94,14 @@
     queryParams = queryParams.filter((_, i) => i !== index);
   }
 
+  function addFormField() {
+    formFields = [...formFields, { key: '', value: '' }];
+  }
+
+  function removeFormField(index) {
+    formFields = formFields.filter((_, i) => i !== index);
+  }
+
   const activeQueryParams = $derived(
     queryParams.filter((q) => q.key.trim())
   );
@@ -145,9 +158,26 @@
     if (opts.body) {
       lines.push('');
       lines.push('--- Request Body ---');
-      lines.push(opts.body);
+      if (opts.body instanceof FormData) {
+        lines.push('Content-Type: multipart/form-data (boundary set by browser)');
+        for (const [key, val] of opts.body.entries()) {
+          if (val instanceof File) {
+            lines.push(`  ${key}: [File] ${val.name} (${formatFileSize(val.size)}, ${val.type || 'unknown type'})`);
+          } else {
+            lines.push(`  ${key}: ${val}`);
+          }
+        }
+      } else {
+        lines.push(opts.body);
+      }
     }
     return lines.join('\n');
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   /** Try a manual OPTIONS preflight and return debug info */
@@ -225,16 +255,45 @@
       }
     }
 
-    if (showBody && body.trim()) {
-      opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
-      opts.body = body;
+    let isFileUpload = false;
+    if (showBody) {
+      if (bodyType === 'file') {
+        if (selectedFiles.length > 0) {
+          isFileUpload = true;
+          const fd = new FormData();
+          const name = fileFieldName.trim() || 'file';
+          for (const f of selectedFiles) {
+            fd.append(name, f);
+          }
+          opts.body = fd;
+        }
+      } else if (bodyType === 'form') {
+        const activeFields = formFields.filter(f => f.key.trim());
+        if (activeFields.length > 0) {
+          opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/x-www-form-urlencoded';
+          const params = new URLSearchParams();
+          for (const f of activeFields) {
+            params.append(f.key.trim(), f.value || '');
+          }
+          opts.body = params.toString();
+        }
+      } else if (body.trim()) {
+        opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
+        opts.body = body;
+      }
     }
 
     const requestUrl = buildRequestUrl(url);
     const requestDebug = buildRequestDebug(requestUrl, opts);
-    const requestHeadersStr = Object.keys(opts.headers).length > 0
-      ? Object.entries(opts.headers).map(([k, v]) => `${k}: ${v}`).join('\n')
+    const allHeaders = isFileUpload
+      ? { ...opts.headers, 'Content-Type': 'multipart/form-data' }
+      : opts.headers;
+    const requestHeadersStr = Object.keys(allHeaders).length > 0
+      ? Object.entries(allHeaders).map(([k, v]) => `${k}: ${v}`).join('\n')
       : '';
+    const requestBodyStr = isFileUpload
+      ? selectedFiles.map(f => `[File] ${f.name} (${formatFileSize(f.size)})`).join(', ')
+      : (opts.body || '');
     const startTime = performance.now();
 
     try {
@@ -277,7 +336,7 @@
           method,
           url: requestUrl,
           requestHeaders: requestHeadersStr,
-          requestBody: opts.body || '',
+          requestBody: requestBodyStr,
           responseStatus: res.status,
           responseStatusText: res.statusText,
           responseHeaders,
@@ -293,7 +352,7 @@
           method,
           url: requestUrl,
           requestHeaders: requestHeadersStr,
-          requestBody: opts.body || '',
+          requestBody: requestBodyStr,
           responseStatus: res.status,
           responseStatusText: res.statusText,
           responseHeaders,
@@ -344,7 +403,7 @@
         method,
         url: requestUrl,
         requestHeaders: requestHeadersStr,
-        requestBody: opts.body || '',
+        requestBody: requestBodyStr,
         responseStatus: null,
         responseStatusText: null,
         responseHeaders: null,
@@ -404,7 +463,32 @@
     } else {
       headers = [];
     }
-    body = row.request_body || '';
+
+    const reqBody = row.request_body || '';
+    const contentType = headers.find(h => h.key.toLowerCase() === 'content-type');
+    if (contentType && contentType.value.includes('multipart/form-data')) {
+      bodyType = 'file';
+      body = '';
+      formFields = [];
+      selectedFiles = [];
+      fileFieldName = 'file';
+    } else if (contentType && contentType.value.includes('application/x-www-form-urlencoded') && reqBody) {
+      bodyType = 'form';
+      body = '';
+      selectedFiles = [];
+      formFields = reqBody.split('&').filter(Boolean).map((pair) => {
+        const [k, ...rest] = pair.split('=');
+        return {
+          key: decodeURIComponent(k || ''),
+          value: decodeURIComponent(rest.join('=') || ''),
+        };
+      });
+    } else {
+      bodyType = 'json';
+      body = reqBody;
+      formFields = [];
+      selectedFiles = [];
+    }
   }
 </script>
 
@@ -541,14 +625,92 @@
         {#if showBody}
           <div class="section">
             <div class="section-header">
-              <span class="section-title">Request Body <span class="badge">JSON</span></span>
+              <span class="section-title">Request Body</span>
+              <select bind:value={bodyType} class="body-type-select">
+                <option value="json">JSON</option>
+                <option value="form">Form</option>
+                <option value="file">File</option>
+              </select>
             </div>
-            <textarea
-              bind:value={body}
-              placeholder={'{"key": "value"}'}
-              class="body-input"
-              rows="6"
-            ></textarea>
+            {#if bodyType === 'json'}
+              <textarea
+                bind:value={body}
+                placeholder={'{"key": "value"}'}
+                class="body-input"
+                rows="6"
+              ></textarea>
+            {:else if bodyType === 'form'}
+              <div class="headers-list">
+                {#each formFields as field, i}
+                  <div class="header-row">
+                    <input
+                      type="text"
+                      bind:value={field.key}
+                      placeholder="Field name"
+                      class="header-input key-input"
+                    />
+                    <input
+                      type="text"
+                      bind:value={field.value}
+                      placeholder="Value"
+                      class="header-input value-input"
+                    />
+                    <button class="remove-btn" onclick={() => removeFormField(i)} title="Remove field">
+                      &times;
+                    </button>
+                  </div>
+                {/each}
+              </div>
+              <button class="add-header-btn add-field-btn" onclick={addFormField}>
+                + Add Field
+              </button>
+            {:else}
+              <div class="file-upload-section">
+                <div class="file-field-row">
+                  <label class="file-field-label">Field name</label>
+                  <input
+                    type="text"
+                    bind:value={fileFieldName}
+                    placeholder="file"
+                    class="header-input file-field-name"
+                  />
+                </div>
+                <div
+                  class="file-dropzone"
+                  role="button"
+                  tabindex="0"
+                  onclick={() => fileInputEl?.click()}
+                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputEl?.click(); }}
+                >
+                  <input
+                    bind:this={fileInputEl}
+                    type="file"
+                    multiple
+                    class="file-hidden-input"
+                    onchange={(e) => { selectedFiles = [...e.target.files]; }}
+                  />
+                  {#if selectedFiles.length > 0}
+                    <div class="file-list">
+                      {#each selectedFiles as f, i}
+                        <div class="file-item">
+                          <span class="file-icon">📄</span>
+                          <span class="file-name">{f.name}</span>
+                          <span class="file-size">{formatFileSize(f.size)}</span>
+                          <button
+                            class="remove-btn file-remove-btn"
+                            onclick={(e) => { e.stopPropagation(); selectedFiles = selectedFiles.filter((_, idx) => idx !== i); }}
+                            title="Remove file"
+                          >&times;</button>
+                        </div>
+                      {/each}
+                    </div>
+                    <span class="file-hint">Click to replace files</span>
+                  {:else}
+                    <span class="file-placeholder">Click to select files</span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
           </div>
         {/if}
 
@@ -1012,6 +1174,134 @@
     border-color: #646cff;
   }
 
+  .body-type-select {
+    background: #202038;
+    border: 1px solid #3a3a4a;
+    color: #ccc;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    border-radius: 5px;
+    cursor: pointer;
+    outline: none;
+    appearance: auto;
+  }
+
+  .body-type-select:focus {
+    border-color: #646cff;
+  }
+
+  .add-field-btn {
+    margin-top: 0.4rem;
+  }
+
+  .file-upload-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .file-field-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .file-field-label {
+    font-size: 0.72rem;
+    color: #888;
+    white-space: nowrap;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .file-field-name {
+    max-width: 180px;
+  }
+
+  .file-dropzone {
+    border: 2px dashed #3a3a4a;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: #1c1c32;
+    min-height: 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+
+  .file-dropzone:hover {
+    border-color: #646cff;
+    background: rgba(100, 108, 255, 0.05);
+  }
+
+  .file-hidden-input {
+    display: none;
+  }
+
+  .file-placeholder {
+    color: #666;
+    font-size: 0.8rem;
+  }
+
+  .file-hint {
+    color: #555;
+    font-size: 0.7rem;
+  }
+
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    width: 100%;
+  }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: #202038;
+    border: 1px solid #3a3a4a;
+    border-radius: 6px;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.78rem;
+  }
+
+  .file-icon {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+
+  .file-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #ccc;
+  }
+
+  .file-size {
+    font-size: 0.7rem;
+    color: #7a7a8e;
+    white-space: nowrap;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .file-remove-btn {
+    width: 22px;
+    height: 22px;
+    font-size: 0.9rem;
+  }
+
   /* Error */
   .error-box {
     background: rgba(249, 62, 62, 0.1);
@@ -1234,6 +1524,31 @@
     .response-body {
       background: #f5f5fa;
       border-color: #ddd;
+    }
+
+    .body-type-select {
+      background: #f0f0f5;
+      border-color: #ddd;
+      color: #333;
+    }
+
+    .file-dropzone {
+      background: #f5f5fa;
+      border-color: #ccc;
+    }
+
+    .file-dropzone:hover {
+      background: rgba(100, 108, 255, 0.05);
+      border-color: #646cff;
+    }
+
+    .file-item {
+      background: #f0f0f5;
+      border-color: #ddd;
+    }
+
+    .file-name {
+      color: #333;
     }
 
     .response-tabs {
