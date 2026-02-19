@@ -846,10 +846,7 @@
               </svg>
               {drawerOpen ? 'Hide' : 'History'}
             </button>
-            <div>
-              <h1>👾 EzPostBot</h1>
-              <p class="subtitle">Test API endpoints directly from your browser</p>
-            </div>
+            <h1><span style="font-size: 1.75rem; vertical-align: -0.15em">👾</span> EzPostBot</h1>
             <span class="top-controls">
               <span class="global-font-controls">
                 <button class="global-font-btn" disabled={globalFontSize <= FONT_MIN} onclick={() => { globalFontSize = +(globalFontSize - FONT_STEP).toFixed(2); }} title="Decrease text size">A−</button>
@@ -1025,6 +1022,9 @@
                   <span class="body-action-icon">✕</span> Clear <kbd class="btn-kbd">{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Esc</kbd>
                 </button>
                 <span class="body-right-controls">
+                  <span class="hint inline-hint">
+                    Press <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Enter</kbd> to send
+                  </span>
                   <label class="assist-toggle" title="Auto-close brackets, quotes, and smart indentation">
                     <span class="toggle-switch small" class:active={jsonAssist}>
                       <input type="checkbox" bind:checked={jsonAssist} />
@@ -1246,9 +1246,6 @@
           {/if}
         </div>
 
-        <div class="hint">
-          Press <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Enter</kbd> to send request
-        </div>
       </div>
     </div>
   </main>
@@ -1328,7 +1325,7 @@
 
   /* Header */
   .app-header {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.6rem;
   }
 
   .app-header-row {
@@ -1338,17 +1335,12 @@
   }
 
   .app-header h1 {
-    font-size: 1.5rem;
+    font-size: 1.125rem;
     margin: 0 0 0.15rem 0;
     font-weight: 700;
     letter-spacing: -0.02em;
   }
 
-  .subtitle {
-    margin: 0;
-    color: #888;
-    font-size: 0.85rem;
-  }
 
   .history-toggle {
     background: #2e2e4d;
@@ -2221,11 +2213,15 @@
 
   /* Hint */
   .hint {
-    text-align: center;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: #9090a8;
-    margin-top: 1.5rem;
-    padding-bottom: 1rem;
+  }
+
+  .inline-hint {
+    margin: 0;
+    padding: 0;
+    margin-right: 0.4rem;
+    white-space: nowrap;
   }
 
   kbd {
