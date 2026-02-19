@@ -2,16 +2,16 @@
   import { saveRequest } from './lib/db.js';
   import HistoryDrawer from './lib/HistoryDrawer.svelte';
 
-  let url = $state(`${window.location.origin}/api/echo`);
-  let method = $state('GET');
-  let body = $state('');
-  let bodyType = $state('json'); // 'json' | 'form' | 'file'
-  let formFields = $state([]);
+  let url = $state(localStorage.getItem('url') ?? `${window.location.origin}/api/echo`);
+  let method = $state(localStorage.getItem('method') || 'GET');
+  let body = $state(localStorage.getItem('body') ?? '');
+  let bodyType = $state(localStorage.getItem('bodyType') || 'json');
+  let formFields = $state(JSON.parse(localStorage.getItem('formFields') || '[]'));
   let selectedFiles = $state([]);
-  let fileFieldName = $state('file');
+  let fileFieldName = $state(localStorage.getItem('fileFieldName') ?? 'file');
   let fileInputEl = $state(null);
-  let headers = $state([]);
-  let queryParams = $state([]);
+  let headers = $state(JSON.parse(localStorage.getItem('headers') || '[]'));
+  let queryParams = $state(JSON.parse(localStorage.getItem('queryParams') || '[]'));
   let response = $state(null);
   let responseStatus = $state(null);
   let responseHeaders = $state('');
@@ -19,21 +19,37 @@
   let errorDebug = $state(null);
   let activeTab = $state('body');
   let responseDuration = $state(null);
-  let serverSide = $state(false);
+  let serverSide = $state(localStorage.getItem('serverSide') === 'true');
   let copiedPanel = $state(null);
   let copiedBody = $state(false);
-  let showHeaders = $state(true);
-  let showQueryParams = $state(true);
-  let showRequestBody = $state(true);
-  let showResponse = $state(true);
-  let showCurl = $state(true);
-  let jsonAssist = $state(true);
+  let showHeaders = $state(localStorage.getItem('showHeaders') !== 'false');
+  let showQueryParams = $state(localStorage.getItem('showQueryParams') !== 'false');
+  let showRequestBody = $state(localStorage.getItem('showRequestBody') !== 'false');
+  let showResponse = $state(localStorage.getItem('showResponse') !== 'false');
+  let showCurl = $state(localStorage.getItem('showCurl') !== 'false');
+  let jsonAssist = $state(localStorage.getItem('jsonAssist') !== 'false');
   let bodyTextarea = $state(null);
-  let bodyFontSize = $state(0.85);
-  const BODY_FONT_DEFAULT = 0.85;
-  const BODY_FONT_STEP = 0.04;
-  const BODY_FONT_MIN = BODY_FONT_DEFAULT - 10 * BODY_FONT_STEP;
-  const BODY_FONT_MAX = BODY_FONT_DEFAULT + 10 * BODY_FONT_STEP;
+  let globalFontSize = $state(parseFloat(localStorage.getItem('globalFontSize')) || 0.8);
+  $effect(() => { localStorage.setItem('globalFontSize', String(globalFontSize)); });
+  $effect(() => { localStorage.setItem('method', method); });
+  $effect(() => { localStorage.setItem('bodyType', bodyType); });
+  $effect(() => { localStorage.setItem('serverSide', String(serverSide)); });
+  $effect(() => { localStorage.setItem('showHeaders', String(showHeaders)); });
+  $effect(() => { localStorage.setItem('showQueryParams', String(showQueryParams)); });
+  $effect(() => { localStorage.setItem('showRequestBody', String(showRequestBody)); });
+  $effect(() => { localStorage.setItem('showResponse', String(showResponse)); });
+  $effect(() => { localStorage.setItem('showCurl', String(showCurl)); });
+  $effect(() => { localStorage.setItem('jsonAssist', String(jsonAssist)); });
+  $effect(() => { localStorage.setItem('url', url); });
+  $effect(() => { localStorage.setItem('body', body); });
+  $effect(() => { localStorage.setItem('headers', JSON.stringify(headers)); });
+  $effect(() => { localStorage.setItem('queryParams', JSON.stringify(queryParams)); });
+  $effect(() => { localStorage.setItem('formFields', JSON.stringify(formFields)); });
+  $effect(() => { localStorage.setItem('fileFieldName', fileFieldName); });
+  const FONT_DEFAULT = 0.8;
+  const FONT_STEP = 0.04;
+  const FONT_MIN = FONT_DEFAULT - 10 * FONT_STEP;
+  const FONT_MAX = FONT_DEFAULT + 10 * FONT_STEP;
 
   const CLOSE_PAIRS = { '{': '}', '[': ']', '"': '"' };
 
@@ -141,7 +157,8 @@
     } catch {}
   }
 
-  let drawerOpen = $state(false);
+  let drawerOpen = $state(localStorage.getItem('drawerOpen') === 'true');
+  $effect(() => { localStorage.setItem('drawerOpen', String(drawerOpen)); });
   let drawerRef = $state(null);
 
   const MIN_DRAWER = 260;
@@ -804,7 +821,7 @@
 <div class="app-layout" class:resizing={isResizing} class:light-theme={!isDarkMode}>
   {#if drawerOpen}
     <div class="drawer-pane" style="width: {drawerWidth}px; min-width: {MIN_DRAWER}px">
-      <HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} darkMode={isDarkMode} />
+      <HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} darkMode={isDarkMode} globalFontSize={globalFontSize} />
     </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-handle" onmousedown={startResize}>
@@ -833,10 +850,17 @@
               <h1>👾 EzPostBot</h1>
               <p class="subtitle">Test API endpoints directly from your browser</p>
             </div>
-            <button class="theme-toggle" onclick={cycleTheme} title={`Theme: ${themeMode}`}>
-              <span class="theme-icon">{getThemeIcon(themeMode)}</span>
-              <span class="theme-label">{themeMode === 'auto' ? 'Auto' : themeMode === 'light' ? 'Light' : 'Dark'}</span>
-            </button>
+            <span class="top-controls">
+              <span class="global-font-controls">
+                <button class="global-font-btn" disabled={globalFontSize <= FONT_MIN} onclick={() => { globalFontSize = +(globalFontSize - FONT_STEP).toFixed(2); }} title="Decrease text size">A−</button>
+                <button class="global-font-btn" disabled={Math.abs(globalFontSize - FONT_DEFAULT) < 0.01} onclick={() => { globalFontSize = FONT_DEFAULT; }} title="Reset text size">A</button>
+                <button class="global-font-btn" disabled={globalFontSize >= FONT_MAX} onclick={() => { globalFontSize = +(globalFontSize + FONT_STEP).toFixed(2); }} title="Increase text size">A+</button>
+              </span>
+              <button class="theme-toggle" onclick={cycleTheme} title={`Theme: ${themeMode}`}>
+                <span class="theme-icon">{getThemeIcon(themeMode)}</span>
+                <span class="theme-label">{themeMode === 'auto' ? 'Auto' : themeMode === 'light' ? 'Light' : 'Dark'}</span>
+              </button>
+            </span>
           </div>
         </div>
 
@@ -852,6 +876,7 @@
               bind:value={url}
               placeholder="Enter request URL..."
               class="url-input"
+              style="font-size: {globalFontSize}rem"
             />
             {#if querySuffix}
               <span class="url-query-preview" title={querySuffix}>{querySuffix}</span>
@@ -987,7 +1012,7 @@
                 class:mono-assist={jsonAssist}
                 rows="6"
                 spellcheck="false"
-                style="font-size: {bodyFontSize}rem"
+                style="font-size: {globalFontSize}rem"
               ></textarea>
               <div class="body-actions">
                 <button class="body-action-btn" onclick={formatJson} title="Format JSON">
@@ -1000,11 +1025,6 @@
                   <span class="body-action-icon">✕</span> Clear <kbd class="btn-kbd">{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Esc</kbd>
                 </button>
                 <span class="body-right-controls">
-                  <span class="body-font-controls">
-                    <button class="body-font-btn" disabled={bodyFontSize <= BODY_FONT_MIN} onclick={() => { bodyFontSize = +(bodyFontSize - BODY_FONT_STEP).toFixed(2); }} title="Decrease font size">A−</button>
-                    <button class="body-font-btn" disabled={Math.abs(bodyFontSize - BODY_FONT_DEFAULT) < 0.01} onclick={() => { bodyFontSize = BODY_FONT_DEFAULT; }} title="Reset font size">A</button>
-                    <button class="body-font-btn" disabled={bodyFontSize >= BODY_FONT_MAX} onclick={() => { bodyFontSize = +(bodyFontSize + BODY_FONT_STEP).toFixed(2); }} title="Increase font size">A+</button>
-                  </span>
                   <label class="assist-toggle" title="Auto-close brackets, quotes, and smart indentation">
                     <span class="toggle-switch small" class:active={jsonAssist}>
                       <input type="checkbox" bind:checked={jsonAssist} />
@@ -1127,28 +1147,28 @@
               </div>
               {#if activeTab === 'rawResponse'}
                 <div class="response-pre-wrapper">
-                  <pre class="debug-body">{errorDebug.rawResponse || '(no response)'}</pre>
+                  <pre class="debug-body" style="font-size: {globalFontSize}rem">{errorDebug.rawResponse || '(no response)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.rawResponse || '', 'dbg-response')} title="Copy">
                     {copiedPanel === 'dbg-response' ? '✓' : '⧉'}
                   </button>
                 </div>
               {:else if activeTab === 'diagnosis'}
                 <div class="response-pre-wrapper">
-                  <pre class="debug-body">{errorDebug.diagnosis || '(no diagnosis available)'}</pre>
+                  <pre class="debug-body" style="font-size: {globalFontSize}rem">{errorDebug.diagnosis || '(no diagnosis available)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.diagnosis || '', 'dbg-diagnosis')} title="Copy">
                     {copiedPanel === 'dbg-diagnosis' ? '✓' : '⧉'}
                   </button>
                 </div>
               {:else if activeTab === 'request'}
                 <div class="response-pre-wrapper">
-                  <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
+                  <pre class="debug-body" style="font-size: {globalFontSize}rem">{errorDebug.request || '(no request info)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.request || '', 'dbg-request')} title="Copy">
                     {copiedPanel === 'dbg-request' ? '✓' : '⧉'}
                   </button>
                 </div>
               {:else if activeTab === 'preflight'}
                 <div class="response-pre-wrapper">
-                  <pre class="debug-body">{errorDebug.preflight}</pre>
+                  <pre class="debug-body" style="font-size: {globalFontSize}rem">{errorDebug.preflight}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.preflight || '', 'dbg-preflight')} title="Copy">
                     {copiedPanel === 'dbg-preflight' ? '✓' : '⧉'}
                   </button>
@@ -1192,14 +1212,14 @@
 
             {#if activeTab === 'body'}
               <div class="response-pre-wrapper">
-                <pre class="response-body">{response || '(empty response)'}</pre>
+                <pre class="response-body" style="font-size: {globalFontSize}rem">{response || '(empty response)'}</pre>
                 <button class="response-copy-btn" onclick={() => copyPanelText(response || '', 'body')} title="Copy">
                   {copiedPanel === 'body' ? '✓' : '⧉'}
                 </button>
               </div>
             {:else}
               <div class="response-pre-wrapper">
-                <pre class="response-body">{responseHeaders || '(no headers)'}</pre>
+                <pre class="response-body" style="font-size: {globalFontSize}rem">{responseHeaders || '(no headers)'}</pre>
                 <button class="response-copy-btn" onclick={() => copyPanelText(responseHeaders || '', 'headers')} title="Copy">
                   {copiedPanel === 'headers' ? '✓' : '⧉'}
                 </button>
@@ -1218,7 +1238,7 @@
           </div>
           {#if showCurl}
             <div class="response-pre-wrapper">
-              <pre class="curl-output">{curlCommand}</pre>
+              <pre class="curl-output" style="font-size: {globalFontSize}rem">{curlCommand}</pre>
               <button class="response-copy-btn" onclick={() => copyPanelText(curlCommand, 'curl')} title="Copy cURL command">
                 {copiedPanel === 'curl' ? '✓' : '⧉'}
               </button>
@@ -1352,6 +1372,43 @@
     color: #fff;
   }
 
+  .top-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+    margin-top: 0.15rem;
+  }
+
+  .global-font-controls {
+    display: flex;
+    gap: 0.2rem;
+  }
+
+  .global-font-btn {
+    background: #2e2e4d;
+    border: 1px solid #3a3a4a;
+    color: #aaa;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.3rem 0.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1;
+  }
+
+  .global-font-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #fff;
+  }
+
+  .global-font-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
   .theme-toggle {
     background: #2e2e4d;
     border: 1px solid #3a3a4a;
@@ -1366,8 +1423,6 @@
     gap: 0.3rem;
     transition: all 0.2s;
     white-space: nowrap;
-    margin-left: auto;
-    margin-top: 0.15rem;
   }
 
   .theme-toggle:hover {
@@ -1793,34 +1848,6 @@
     margin-left: auto;
   }
 
-  .body-font-controls {
-    display: flex;
-    gap: 0.2rem;
-  }
-
-  .body-font-btn {
-    background: transparent;
-    border: 1px solid #4a4a5a;
-    color: #888;
-    font-size: 0.6rem;
-    font-weight: 700;
-    padding: 0.15rem 0.45rem;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: all 0.15s;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    line-height: 1;
-  }
-
-  .body-font-btn:hover:not(:disabled) {
-    border-color: #646cff;
-    color: #ccc;
-  }
-
-  .body-font-btn:disabled {
-    opacity: 0.3;
-    cursor: default;
-  }
 
   .toggle-switch.small .toggle-track {
     width: 26px;
@@ -2047,6 +2074,16 @@
   .status-err {
     background: rgba(249, 62, 62, 0.15);
     color: #f93e3e;
+  }
+
+  .light-theme .status-ok {
+    background: rgba(30, 140, 80, 0.15);
+    color: #1a7a45;
+  }
+
+  .light-theme .status-err {
+    background: rgba(200, 30, 30, 0.15);
+    color: #b91c1c;
   }
 
   .response-status-group {
@@ -2357,6 +2394,18 @@
     background: #ccccda;
   }
 
+  .light-theme .global-font-btn {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #333;
+  }
+
+  .light-theme .global-font-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #111;
+    background: #ccccda;
+  }
+
   .light-theme .theme-toggle {
     background: #dadaea;
     border-color: #a0a0b4;
@@ -2377,15 +2426,6 @@
     background: rgba(100, 108, 255, 0.12);
   }
 
-  .light-theme .body-font-btn {
-    border-color: #a0a0b4;
-    color: #555;
-  }
-
-  .light-theme .body-font-btn:hover:not(:disabled) {
-    border-color: #646cff;
-    color: #222;
-  }
 
   .light-theme .resize-grip {
     background: #999;

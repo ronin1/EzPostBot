@@ -1,7 +1,7 @@
 <script>
   import { queryRequests, deleteRequest, clearAllRequests } from './db.js';
 
-  let { open = $bindable(false), onReplay = () => {}, darkMode = true } = $props();
+  let { open = $bindable(false), onReplay = () => {}, darkMode = true, globalFontSize = 0.72 } = $props();
 
   // Filters
   let filterMethods = $state([]);
@@ -39,7 +39,11 @@
   // Data
   let rows = $state([]);
   let total = $state(0);
-  let expandedId = $state(null);
+  let expandedId = $state((() => { const v = localStorage.getItem('expandedId'); return v ? Number(v) : null; })());
+  $effect(() => {
+    if (expandedId != null) localStorage.setItem('expandedId', String(expandedId));
+    else localStorage.removeItem('expandedId');
+  });
 
   const allMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -180,7 +184,6 @@
   }
 
   let copiedId = $state(null);
-  let detailFontSize = $state(0.72);
   async function copyText(text, id) {
     try {
       await navigator.clipboard.writeText(text);
@@ -304,11 +307,6 @@
                 <strong>Mode:</strong> {row.server_side ? 'Server-side' : 'Client-side'}
                 {#if row.duration_ms != null}&nbsp;·&nbsp;<strong>Duration:</strong> {row.duration_ms}ms{/if}
               </span>
-              <span class="font-size-controls">
-                <button class="font-btn" disabled={detailFontSize <= 0.32} onclick={() => { detailFontSize = +(detailFontSize - 0.04).toFixed(2); }} title="Decrease font size">A−</button>
-                <button class="font-btn font-btn-reset" disabled={Math.abs(detailFontSize - 0.72) < 0.01} onclick={() => { detailFontSize = 0.72; }} title="Reset font size">A</button>
-                <button class="font-btn" disabled={detailFontSize >= 1.12} onclick={() => { detailFontSize = +(detailFontSize + 0.04).toFixed(2); }} title="Increase font size">A+</button>
-              </span>
             </div>
 
             <div class="detail-tabs">
@@ -339,7 +337,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.error, `err-${row.id}`)} title="Copy">
                       {copiedId === `err-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre error-pre" style="font-size: {detailFontSize}rem">{row.error}</pre>
+                    <pre class="detail-pre error-pre" style="font-size: {globalFontSize}rem">{row.error}</pre>
                   </div>
                 </div>
               {/if}
@@ -350,7 +348,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.response_headers, `resh-${row.id}`)} title="Copy">
                       {copiedId === `resh-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre" style="font-size: {detailFontSize}rem">{row.response_headers}</pre>
+                    <pre class="detail-pre" style="font-size: {globalFontSize}rem">{row.response_headers}</pre>
                   </div>
                 </div>
               {/if}
@@ -361,7 +359,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.response_body, `resb-${row.id}`)} title="Copy">
                       {copiedId === `resb-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre" style="font-size: {detailFontSize}rem">{row.response_body}</pre>
+                    <pre class="detail-pre" style="font-size: {globalFontSize}rem">{row.response_body}</pre>
                   </div>
                 </div>
               {/if}
@@ -374,7 +372,7 @@
                   <button class="copy-btn" onclick={() => copyText(row.diagnosis, `diag-${row.id}`)} title="Copy">
                     {copiedId === `diag-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre" style="font-size: {detailFontSize}rem">{row.diagnosis}</pre>
+                  <pre class="detail-pre" style="font-size: {globalFontSize}rem">{row.diagnosis}</pre>
                 </div>
               </div>
             {:else if getItemTab(row.id) === 'request'}
@@ -383,7 +381,7 @@
                   <button class="copy-btn" onclick={() => copyText(buildStoredRequestText(row), `req-${row.id}`)} title="Copy">
                     {copiedId === `req-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre" style="font-size: {detailFontSize}rem">{buildStoredRequestText(row)}</pre>
+                  <pre class="detail-pre" style="font-size: {globalFontSize}rem">{buildStoredRequestText(row)}</pre>
                 </div>
               </div>
             {:else if getItemTab(row.id) === 'preflight'}
@@ -392,7 +390,7 @@
                   <button class="copy-btn" onclick={() => copyText(row.preflight, `pf-${row.id}`)} title="Copy">
                     {copiedId === `pf-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre" style="font-size: {detailFontSize}rem">{row.preflight}</pre>
+                  <pre class="detail-pre" style="font-size: {globalFontSize}rem">{row.preflight}</pre>
                 </div>
               </div>
             {/if}
@@ -844,35 +842,6 @@
     min-width: 0;
   }
 
-  .font-size-controls {
-    display: flex;
-    gap: 0.2rem;
-    flex-shrink: 0;
-  }
-
-  .font-btn {
-    background: transparent;
-    border: 1px solid #3a3a4a;
-    color: #888;
-    font-size: 0.6rem;
-    font-weight: 700;
-    padding: 0.1rem 0.3rem;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: all 0.15s;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    line-height: 1;
-  }
-
-  .font-btn:hover:not(:disabled) {
-    border-color: #646cff;
-    color: #ccc;
-  }
-
-  .font-btn:disabled {
-    opacity: 0.3;
-    cursor: default;
-  }
 
   .detail-section {
     margin-bottom: 0.4rem;
@@ -987,7 +956,7 @@
   .page-btn {
     background: transparent;
     border: 1px solid #4a4a5a;
-    color: #aaa;
+    color: #bbb;
     padding: 0.2rem 0.45rem;
     font-size: 0.68rem;
     border-radius: 4px;
@@ -1007,7 +976,7 @@
 
   .page-info {
     font-size: 0.68rem;
-    color: #888;
+    color: #aaa;
   }
 
   .clear-all-btn {
@@ -1216,17 +1185,22 @@
     color: #444;
   }
 
-  .light-theme .font-btn {
-    border-color: #a0a0b4;
-    color: #555;
-  }
-
-  .light-theme .font-btn:hover:not(:disabled) {
-    border-color: #646cff;
-    color: #222;
-  }
 
   .light-theme .panel-footer {
     border-top-color: #a0a0b4;
+  }
+
+  .light-theme .page-btn {
+    border-color: #8888a0;
+    color: #333;
+  }
+
+  .light-theme .page-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #111;
+  }
+
+  .light-theme .page-info {
+    color: #333;
   }
 </style>
