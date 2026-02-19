@@ -30,13 +30,15 @@ db.exec(`
     error TEXT,
     duration_ms INTEGER,
     diagnosis TEXT,
-    preflight TEXT
+    preflight TEXT,
+    server_side INTEGER DEFAULT 0
   )
 `);
 
 // Migration: add columns if they don't exist yet (for existing databases)
 try { db.exec('ALTER TABLE requests ADD COLUMN diagnosis TEXT'); } catch {}
 try { db.exec('ALTER TABLE requests ADD COLUMN preflight TEXT'); } catch {}
+try { db.exec('ALTER TABLE requests ADD COLUMN server_side INTEGER DEFAULT 0'); } catch {}
 
 const app = express();
 app.use(cors());
@@ -72,8 +74,8 @@ app.all('/api/echo', (req, res) => {
 app.post('/api/history', (req, res) => {
   const r = req.body;
   const stmt = db.prepare(`
-    INSERT INTO requests (timestamp, method, url, request_headers, request_body, response_status, response_status_text, response_headers, response_body, error, duration_ms, diagnosis, preflight)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO requests (timestamp, method, url, request_headers, request_body, response_status, response_status_text, response_headers, response_body, error, duration_ms, diagnosis, preflight, server_side)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     r.timestamp, r.method, r.url,
@@ -81,7 +83,8 @@ app.post('/api/history', (req, res) => {
     r.responseStatus || null, r.responseStatusText || null,
     r.responseHeaders || null, r.responseBody || null,
     r.error || null, r.durationMs || null,
-    r.diagnosis || null, r.preflight || null
+    r.diagnosis || null, r.preflight || null,
+    r.serverSide ? 1 : 0
   );
   res.json({ id: result.lastInsertRowid });
 });
@@ -93,8 +96,10 @@ app.get('/api/history', (req, res) => {
     url: urlFilter,
     statusMin,
     statusMax,
+    serverSide: serverSideFilter,
     page = '1',
     pageSize = '20',
+    sortBy = 'timestamp',
     sortDir = 'DESC',
   } = req.query;
 
@@ -123,8 +128,15 @@ app.get('/api/history', (req, res) => {
     conditions.push('response_status <= ?');
     params.push(Number(statusMax));
   }
+  if (serverSideFilter === '1') {
+    conditions.push('server_side = 1');
+  } else if (serverSideFilter === '0') {
+    conditions.push('(server_side = 0 OR server_side IS NULL)');
+  }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const allowedSortCols = { timestamp: 'timestamp', url: 'url', method: 'method' };
+  const col = allowedSortCols[sortBy] || 'timestamp';
   const dir = sortDir === 'ASC' ? 'ASC' : 'DESC';
   const limit = Number(pageSize);
   const offset = (Number(page) - 1) * limit;
@@ -133,7 +145,7 @@ app.get('/api/history', (req, res) => {
 
   const rows = db.prepare(`
     SELECT * FROM requests ${where}
-    ORDER BY timestamp ${dir}
+    ORDER BY ${col} ${dir}
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
 
