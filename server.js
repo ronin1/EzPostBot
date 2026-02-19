@@ -41,9 +41,30 @@ try { db.exec('ALTER TABLE requests ADD COLUMN preflight TEXT'); } catch {}
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(express.text({ limit: '10mb', type: ['text/*'] }));
+app.use(express.raw({ limit: '10mb', type: ['application/octet-stream', 'multipart/form-data'] }));
 
 // Serve static frontend in production
 app.use(express.static(join(__dirname, 'dist')));
+
+// --- Echo endpoint — mirrors back everything the client sent ---
+app.all('/api/echo', (req, res) => {
+  const echo = {
+    timestamp: new Date().toISOString(),
+    method: req.method,
+    url: req.originalUrl,
+    path: req.path,
+    query: req.query,
+    headers: req.headers,
+    body: req.body instanceof Buffer ? `<binary ${req.body.length} bytes>` : req.body,
+    contentType: req.headers['content-type'] || null,
+    ip: req.ip,
+    protocol: req.protocol,
+    hostname: req.hostname,
+  };
+  res.json(echo);
+});
 
 // --- API Routes ---
 
@@ -129,6 +150,53 @@ app.delete('/api/history/:id', (req, res) => {
 app.delete('/api/history', (_req, res) => {
   db.prepare('DELETE FROM requests').run();
   res.json({ ok: true });
+});
+
+// Server-side proxy — bypasses CORS by making the request from the server
+app.post('/api/proxy', async (req, res) => {
+  const { url, method: reqMethod, headers: reqHeaders, body: reqBody } = req.body;
+  if (!url) return res.status(400).json({ error: 'Missing url' });
+
+  const startTime = performance.now();
+  try {
+    const fetchOpts = { method: reqMethod || 'GET', headers: {} };
+
+    if (reqHeaders && typeof reqHeaders === 'object') {
+      for (const [k, v] of Object.entries(reqHeaders)) {
+        fetchOpts.headers[k] = v;
+      }
+    }
+
+    if (reqBody && ['POST', 'PUT', 'PATCH'].includes((reqMethod || '').toUpperCase())) {
+      fetchOpts.body = reqBody;
+    }
+
+    const upstream = await fetch(url, fetchOpts);
+    const durationMs = Math.round(performance.now() - startTime);
+
+    const respHeaders = {};
+    upstream.headers.forEach((value, key) => { respHeaders[key] = value; });
+
+    const bodyText = await upstream.text();
+
+    res.json({
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: respHeaders,
+      body: bodyText,
+      durationMs,
+    });
+  } catch (err) {
+    const durationMs = Math.round(performance.now() - startTime);
+    res.json({
+      status: null,
+      statusText: null,
+      headers: {},
+      body: null,
+      durationMs,
+      error: `${err.name}: ${err.message}`,
+    });
+  }
 });
 
 // SPA fallback — serve index.html for any non-API route

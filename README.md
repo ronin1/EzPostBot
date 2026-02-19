@@ -63,6 +63,27 @@ Then open the app URL printed by Vite in your terminal.
 - `make docker-clean`  
   Removes compose services, images, volumes, and local `data` directory.
 
+## Built-in Echo API
+
+EzPostBot ships with a built-in `/api/echo` endpoint that mirrors back everything you send — method, headers, query params, and body. It is the default URL when the app starts, making it easy to verify the tool itself without an external API.
+
+The echo response includes:
+
+| Field         | Description                          |
+|---------------|--------------------------------------|
+| `method`      | HTTP verb used (GET, POST, etc.)     |
+| `url`         | Full request URL with query string   |
+| `query`       | Parsed query parameters              |
+| `headers`     | All request headers                  |
+| `body`        | Parsed request body                  |
+| `contentType` | Content-Type header value            |
+| `timestamp`   | Server-side ISO timestamp            |
+| `ip`          | Client IP address                    |
+| `protocol`    | Request protocol (http/https)        |
+| `hostname`    | Request hostname                     |
+
+Supports all HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`.
+
 ## Data Storage
 
 - Request/response history is stored in SQLite under `data/history.db`.

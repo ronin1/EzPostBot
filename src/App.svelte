@@ -2,9 +2,14 @@
   import { saveRequest } from './lib/db.js';
   import HistoryDrawer from './lib/HistoryDrawer.svelte';
 
-  let url = $state('https://io.dev.clarityrcm.com/api/peripheral/health');
+  let url = $state(`${window.location.origin}/api/echo`);
   let method = $state('GET');
   let body = $state('');
+  let bodyType = $state('json'); // 'json' | 'form' | 'file'
+  let formFields = $state([]);
+  let selectedFiles = $state([]);
+  let fileFieldName = $state('file');
+  let fileInputEl = $state(null);
   let headers = $state([]);
   let queryParams = $state([]);
   let response = $state(null);
@@ -14,7 +19,103 @@
   let errorDebug = $state(null);
   let activeTab = $state('body');
   let responseDuration = $state(null);
+  let serverSide = $state(false);
   let copiedPanel = $state(null);
+  let copiedBody = $state(false);
+  let jsonAssist = $state(true);
+  let bodyTextarea = $state(null);
+
+  const CLOSE_PAIRS = { '{': '}', '[': ']', '"': '"' };
+
+  function handleBodyKeydown(e) {
+    if (!jsonAssist || !bodyTextarea) return;
+    const ta = bodyTextarea;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const val = ta.value;
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const indent = '  ';
+      document.execCommand('insertText', false, indent);
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const before = val.slice(0, start);
+      const after = val.slice(end);
+      const lineStart = before.lastIndexOf('\n') + 1;
+      const currentLine = before.slice(lineStart);
+      const baseIndent = currentLine.match(/^(\s*)/)[1];
+      const lastChar = before.trimEnd().slice(-1);
+      const nextChar = after.trimStart()[0] || '';
+
+      let insert;
+      if ((lastChar === '{' || lastChar === '[') && (nextChar === '}' || nextChar === ']')) {
+        insert = `\n${baseIndent}  \n${baseIndent}`;
+        document.execCommand('insertText', false, insert);
+        ta.selectionStart = ta.selectionEnd = start + 1 + baseIndent.length + 2;
+      } else if (lastChar === '{' || lastChar === '[') {
+        insert = `\n${baseIndent}  `;
+        document.execCommand('insertText', false, insert);
+      } else {
+        insert = `\n${baseIndent}`;
+        document.execCommand('insertText', false, insert);
+      }
+      return;
+    }
+
+    const closer = CLOSE_PAIRS[e.key];
+    if (closer) {
+      if (e.key === '"') {
+        const charBefore = start > 0 ? val[start - 1] : '';
+        if (charBefore === '\\') return;
+        if (val[start] === '"' && start === end) {
+          e.preventDefault();
+          ta.selectionStart = ta.selectionEnd = start + 1;
+          return;
+        }
+      }
+      if (e.key !== '"' || start === end || val[start] !== '"') {
+        e.preventDefault();
+        document.execCommand('insertText', false, e.key + closer);
+        ta.selectionStart = ta.selectionEnd = start + 1;
+      }
+      return;
+    }
+
+    if ((e.key === '}' || e.key === ']' || (e.key === '"' && val[start] === '"')) && val[start] === e.key && start === end) {
+      e.preventDefault();
+      ta.selectionStart = ta.selectionEnd = start + 1;
+      return;
+    }
+
+    if (e.key === 'Backspace' && start === end && start > 0) {
+      const ch = val[start - 1];
+      const nxt = val[start];
+      if ((ch === '{' && nxt === '}') || (ch === '[' && nxt === ']') || (ch === '"' && nxt === '"')) {
+        e.preventDefault();
+        ta.selectionStart = start - 1;
+        ta.selectionEnd = start + 1;
+        document.execCommand('insertText', false, '');
+      }
+    }
+  }
+
+  function formatJson() {
+    try {
+      body = JSON.stringify(JSON.parse(body), null, 2);
+    } catch {}
+  }
+
+  async function copyBody() {
+    try {
+      await navigator.clipboard.writeText(body);
+      copiedBody = true;
+      setTimeout(() => { copiedBody = false; }, 1500);
+    } catch {}
+  }
 
   async function copyPanelText(text, id) {
     try {
@@ -53,6 +154,13 @@
 
   const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
   const showBody = $derived(method === 'POST' || method === 'PUT' || method === 'PATCH');
+  const allowFile = $derived(method === 'POST' || method === 'PUT');
+
+  $effect(() => {
+    if (!allowFile && bodyType === 'file') {
+      bodyType = 'json';
+    }
+  });
 
   function startResize(e) {
     e.preventDefault();
@@ -87,6 +195,14 @@
 
   function removeQueryParam(index) {
     queryParams = queryParams.filter((_, i) => i !== index);
+  }
+
+  function addFormField() {
+    formFields = [...formFields, { key: '', value: '' }];
+  }
+
+  function removeFormField(index) {
+    formFields = formFields.filter((_, i) => i !== index);
   }
 
   const activeQueryParams = $derived(
@@ -145,9 +261,26 @@
     if (opts.body) {
       lines.push('');
       lines.push('--- Request Body ---');
-      lines.push(opts.body);
+      if (opts.body instanceof FormData) {
+        lines.push('Content-Type: multipart/form-data (boundary set by browser)');
+        for (const [key, val] of opts.body.entries()) {
+          if (val instanceof File) {
+            lines.push(`  ${key}: [File] ${val.name} (${formatFileSize(val.size)}, ${val.type || 'unknown type'})`);
+          } else {
+            lines.push(`  ${key}: ${val}`);
+          }
+        }
+      } else {
+        lines.push(opts.body);
+      }
     }
     return lines.join('\n');
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   /** Try a manual OPTIONS preflight and return debug info */
@@ -225,18 +358,150 @@
       }
     }
 
-    if (showBody && body.trim()) {
-      opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
-      opts.body = body;
+    let isFileUpload = false;
+    if (showBody) {
+      if (bodyType === 'file') {
+        if (selectedFiles.length > 0) {
+          isFileUpload = true;
+          const fd = new FormData();
+          const name = fileFieldName.trim() || 'file';
+          for (const f of selectedFiles) {
+            fd.append(name, f);
+          }
+          opts.body = fd;
+        }
+      } else if (bodyType === 'form') {
+        const activeFields = formFields.filter(f => f.key.trim());
+        if (activeFields.length > 0) {
+          opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/x-www-form-urlencoded';
+          const params = new URLSearchParams();
+          for (const f of activeFields) {
+            params.append(f.key.trim(), f.value || '');
+          }
+          opts.body = params.toString();
+        }
+      } else if (body.trim()) {
+        opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
+        opts.body = body;
+      }
     }
 
     const requestUrl = buildRequestUrl(url);
     const requestDebug = buildRequestDebug(requestUrl, opts);
-    const requestHeadersStr = Object.keys(opts.headers).length > 0
-      ? Object.entries(opts.headers).map(([k, v]) => `${k}: ${v}`).join('\n')
+    const allHeaders = isFileUpload
+      ? { ...opts.headers, 'Content-Type': 'multipart/form-data' }
+      : opts.headers;
+    const requestHeadersStr = Object.keys(allHeaders).length > 0
+      ? Object.entries(allHeaders).map(([k, v]) => `${k}: ${v}`).join('\n')
       : '';
+    const requestBodyStr = isFileUpload
+      ? selectedFiles.map(f => `[File] ${f.name} (${formatFileSize(f.size)})`).join(', ')
+      : (opts.body || '');
     const startTime = performance.now();
 
+    if (serverSide && !isFileUpload) {
+      await sendServerSide(requestUrl, opts, requestDebug, requestHeadersStr, requestBodyStr);
+    } else {
+      await sendClientSide(requestUrl, opts, requestDebug, requestHeadersStr, requestBodyStr, startTime);
+    }
+
+    loading = false;
+  }
+
+  async function sendServerSide(requestUrl, opts, requestDebug, requestHeadersStr, requestBodyStr) {
+    try {
+      const proxyPayload = {
+        url: requestUrl,
+        method: opts.method,
+        headers: opts.headers,
+        body: typeof opts.body === 'string' ? opts.body : undefined,
+      };
+      const proxyRes = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proxyPayload),
+      });
+      const data = await proxyRes.json();
+      const durationMs = data.durationMs || 0;
+      responseDuration = durationMs;
+
+      if (data.error) {
+        const diagText = `${data.error}\n\n(Server-side request — no CORS involved)`;
+        activeTab = 'rawResponse';
+        errorDebug = {
+          message: data.error,
+          request: requestDebug,
+          preflight: '',
+          rawResponse: data.error,
+          diagnosis: diagText,
+        };
+        await saveRequest({
+          timestamp: new Date().toISOString(), method, url: requestUrl,
+          requestHeaders: requestHeadersStr, requestBody: requestBodyStr,
+          responseStatus: null, responseStatusText: null,
+          responseHeaders: null, responseBody: null,
+          error: data.error, durationMs,
+          diagnosis: diagText, preflight: null,
+        });
+        drawerRef?.refresh();
+        return;
+      }
+
+      const respHeaderLines = Object.entries(data.headers || {}).map(([k, v]) => `${k}: ${v}`);
+      responseHeaders = respHeaderLines.join('\n');
+      const isOk = data.status >= 200 && data.status < 300;
+
+      responseStatus = { code: data.status, text: data.statusText, ok: isOk };
+
+      const ct = (data.headers?.['content-type'] || '');
+      if (ct.includes('application/json') && data.body) {
+        try { response = JSON.stringify(JSON.parse(data.body), null, 2); }
+        catch { response = data.body; }
+      } else {
+        response = data.body || '';
+      }
+
+      if (!isOk) {
+        const diagText = `HTTP error ${data.status} ${data.statusText}\n\n(Server-side request — no CORS involved)\nCheck the Response tab for full details.`;
+        activeTab = 'rawResponse';
+        errorDebug = {
+          message: `HTTP ${data.status} ${data.statusText}`,
+          request: requestDebug,
+          preflight: '',
+          rawResponse: `--- Response Status ---\n${data.status} ${data.statusText}\n\n--- Response Headers ---\n${responseHeaders}\n\n--- Response Body ---\n${response || '(empty)'}`,
+          diagnosis: diagText,
+        };
+        await saveRequest({
+          timestamp: new Date().toISOString(), method, url: requestUrl,
+          requestHeaders: requestHeadersStr, requestBody: requestBodyStr,
+          responseStatus: data.status, responseStatusText: data.statusText,
+          responseHeaders, responseBody: response,
+          error: `HTTP ${data.status} ${data.statusText}`, durationMs,
+          diagnosis: diagText, preflight: '',
+        });
+      } else {
+        await saveRequest({
+          timestamp: new Date().toISOString(), method, url: requestUrl,
+          requestHeaders: requestHeadersStr, requestBody: requestBodyStr,
+          responseStatus: data.status, responseStatusText: data.statusText,
+          responseHeaders, responseBody: response,
+          error: null, durationMs, diagnosis: null, preflight: null,
+        });
+      }
+      drawerRef?.refresh();
+    } catch (err) {
+      responseDuration = 0;
+      errorDebug = {
+        message: `Proxy error: ${err.message}`,
+        request: requestDebug,
+        preflight: '',
+        rawResponse: `Proxy error: ${err.message}`,
+        diagnosis: 'Failed to reach the local proxy server.\nMake sure the backend is running.',
+      };
+    }
+  }
+
+  async function sendClientSide(requestUrl, opts, requestDebug, requestHeadersStr, requestBodyStr, startTime) {
     try {
       const res = await fetch(requestUrl, opts);
       const durationMs = Math.round(performance.now() - startTime);
@@ -277,7 +542,7 @@
           method,
           url: requestUrl,
           requestHeaders: requestHeadersStr,
-          requestBody: opts.body || '',
+          requestBody: requestBodyStr,
           responseStatus: res.status,
           responseStatusText: res.statusText,
           responseHeaders,
@@ -293,7 +558,7 @@
           method,
           url: requestUrl,
           requestHeaders: requestHeadersStr,
-          requestBody: opts.body || '',
+          requestBody: requestBodyStr,
           responseStatus: res.status,
           responseStatusText: res.statusText,
           responseHeaders,
@@ -344,7 +609,7 @@
         method,
         url: requestUrl,
         requestHeaders: requestHeadersStr,
-        requestBody: opts.body || '',
+        requestBody: requestBodyStr,
         responseStatus: null,
         responseStatusText: null,
         responseHeaders: null,
@@ -355,14 +620,16 @@
         preflight: preflightDebug || null,
       });
       drawerRef?.refresh();
-    } finally {
-      loading = false;
     }
   }
 
   function handleKeydown(e) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       sendRequest();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Escape') {
+      e.preventDefault();
+      body = '';
     }
   }
 
@@ -404,7 +671,32 @@
     } else {
       headers = [];
     }
-    body = row.request_body || '';
+
+    const reqBody = row.request_body || '';
+    const contentType = headers.find(h => h.key.toLowerCase() === 'content-type');
+    if (contentType && contentType.value.includes('multipart/form-data')) {
+      bodyType = 'file';
+      body = '';
+      formFields = [];
+      selectedFiles = [];
+      fileFieldName = 'file';
+    } else if (contentType && contentType.value.includes('application/x-www-form-urlencoded') && reqBody) {
+      bodyType = 'form';
+      body = '';
+      selectedFiles = [];
+      formFields = reqBody.split('&').filter(Boolean).map((pair) => {
+        const [k, ...rest] = pair.split('=');
+        return {
+          key: decodeURIComponent(k || ''),
+          value: decodeURIComponent(rest.join('=') || ''),
+        };
+      });
+    } else {
+      bodyType = 'json';
+      body = reqBody;
+      formFields = [];
+      selectedFiles = [];
+    }
   }
 </script>
 
@@ -469,6 +761,17 @@
               Send
             {/if}
           </button>
+        </div>
+
+        <div class="request-options-bar">
+          <label class="toggle-label">
+            <span class="toggle-switch" class:active={serverSide}>
+              <input type="checkbox" bind:checked={serverSide} />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </span>
+            <span class="toggle-text">Server-side</span>
+            <span class="toggle-hint" data-tip="Send request from the backend server, bypassing CORS preflight and browser restrictions">ⓘ</span>
+          </label>
         </div>
 
         <!-- Headers Section -->
@@ -541,14 +844,116 @@
         {#if showBody}
           <div class="section">
             <div class="section-header">
-              <span class="section-title">Request Body <span class="badge">JSON</span></span>
+              <span class="section-title">Request Body</span>
+              <select bind:value={bodyType} class="body-type-select">
+                <option value="json">JSON</option>
+                <option value="form">Form</option>
+                {#if allowFile}
+                  <option value="file">File</option>
+                {/if}
+              </select>
             </div>
-            <textarea
-              bind:value={body}
-              placeholder={'{"key": "value"}'}
-              class="body-input"
-              rows="6"
-            ></textarea>
+            {#if bodyType === 'json'}
+              <textarea
+                bind:this={bodyTextarea}
+                bind:value={body}
+                onkeydown={handleBodyKeydown}
+                placeholder={'{"key": "value"}'}
+                class="body-input"
+                class:mono-assist={jsonAssist}
+                rows="6"
+                spellcheck="false"
+              ></textarea>
+              <div class="body-actions">
+                <button class="body-action-btn" onclick={formatJson} title="Format JSON">
+                  <span class="body-action-icon">{'{}'}</span> Format
+                </button>
+                <button class="body-action-btn" onclick={copyBody} title="Copy body">
+                  <span class="body-action-icon">{copiedBody ? '✓' : '⧉'}</span> {copiedBody ? 'Copied' : 'Copy'}
+                </button>
+                <button class="body-action-btn" onclick={() => { body = ''; }} title="Clear body">
+                  <span class="body-action-icon">✕</span> Clear
+                </button>
+                <label class="assist-toggle" title="Auto-close brackets, quotes, and smart indentation">
+                  <span class="toggle-switch small" class:active={jsonAssist}>
+                    <input type="checkbox" bind:checked={jsonAssist} />
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                  </span>
+                  <span class="assist-label">Smart Edit</span>
+                </label>
+              </div>
+            {:else if bodyType === 'form'}
+              <div class="headers-list">
+                {#each formFields as field, i}
+                  <div class="header-row">
+                    <input
+                      type="text"
+                      bind:value={field.key}
+                      placeholder="Field name"
+                      class="header-input key-input"
+                    />
+                    <input
+                      type="text"
+                      bind:value={field.value}
+                      placeholder="Value"
+                      class="header-input value-input"
+                    />
+                    <button class="remove-btn" onclick={() => removeFormField(i)} title="Remove field">
+                      &times;
+                    </button>
+                  </div>
+                {/each}
+              </div>
+              <button class="add-header-btn add-field-btn" onclick={addFormField}>
+                + Add Field
+              </button>
+            {:else}
+              <div class="file-upload-section">
+                <div class="file-field-row">
+                  <label class="file-field-label">Field name</label>
+                  <input
+                    type="text"
+                    bind:value={fileFieldName}
+                    placeholder="file"
+                    class="header-input file-field-name"
+                  />
+                </div>
+                <div
+                  class="file-dropzone"
+                  role="button"
+                  tabindex="0"
+                  onclick={() => fileInputEl?.click()}
+                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputEl?.click(); }}
+                >
+                  <input
+                    bind:this={fileInputEl}
+                    type="file"
+                    multiple
+                    class="file-hidden-input"
+                    onchange={(e) => { selectedFiles = [...e.target.files]; }}
+                  />
+                  {#if selectedFiles.length > 0}
+                    <div class="file-list">
+                      {#each selectedFiles as f, i}
+                        <div class="file-item">
+                          <span class="file-icon">📄</span>
+                          <span class="file-name">{f.name}</span>
+                          <span class="file-size">{formatFileSize(f.size)}</span>
+                          <button
+                            class="remove-btn file-remove-btn"
+                            onclick={(e) => { e.stopPropagation(); selectedFiles = selectedFiles.filter((_, idx) => idx !== i); }}
+                            title="Remove file"
+                          >&times;</button>
+                        </div>
+                      {/each}
+                    </div>
+                    <span class="file-hint">Click to replace files</span>
+                  {:else}
+                    <span class="file-placeholder">Click to select files</span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
           </div>
         {/if}
 
@@ -577,31 +982,31 @@
               </div>
               {#if activeTab === 'rawResponse'}
                 <div class="response-pre-wrapper">
+                  <pre class="debug-body">{errorDebug.rawResponse || '(no response)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.rawResponse || '', 'dbg-response')} title="Copy">
                     {copiedPanel === 'dbg-response' ? '✓' : '⧉'}
                   </button>
-                  <pre class="debug-body">{errorDebug.rawResponse || '(no response)'}</pre>
                 </div>
               {:else if activeTab === 'diagnosis'}
                 <div class="response-pre-wrapper">
+                  <pre class="debug-body">{errorDebug.diagnosis || '(no diagnosis available)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.diagnosis || '', 'dbg-diagnosis')} title="Copy">
                     {copiedPanel === 'dbg-diagnosis' ? '✓' : '⧉'}
                   </button>
-                  <pre class="debug-body">{errorDebug.diagnosis || '(no diagnosis available)'}</pre>
                 </div>
               {:else if activeTab === 'request'}
                 <div class="response-pre-wrapper">
+                  <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.request || '', 'dbg-request')} title="Copy">
                     {copiedPanel === 'dbg-request' ? '✓' : '⧉'}
                   </button>
-                  <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
                 </div>
               {:else if activeTab === 'preflight'}
                 <div class="response-pre-wrapper">
+                  <pre class="debug-body">{errorDebug.preflight}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.preflight || '', 'dbg-preflight')} title="Copy">
                     {copiedPanel === 'dbg-preflight' ? '✓' : '⧉'}
                   </button>
-                  <pre class="debug-body">{errorDebug.preflight}</pre>
                 </div>
               {/if}
             </div>
@@ -638,24 +1043,24 @@
 
             {#if activeTab === 'body'}
               <div class="response-pre-wrapper">
+                <pre class="response-body">{response || '(empty response)'}</pre>
                 <button class="response-copy-btn" onclick={() => copyPanelText(response || '', 'body')} title="Copy">
                   {copiedPanel === 'body' ? '✓' : '⧉'}
                 </button>
-                <pre class="response-body">{response || '(empty response)'}</pre>
               </div>
             {:else}
               <div class="response-pre-wrapper">
+                <pre class="response-body">{responseHeaders || '(no headers)'}</pre>
                 <button class="response-copy-btn" onclick={() => copyPanelText(responseHeaders || '', 'headers')} title="Copy">
                   {copiedPanel === 'headers' ? '✓' : '⧉'}
                 </button>
-                <pre class="response-body">{responseHeaders || '(no headers)'}</pre>
               </div>
             {/if}
           </div>
         {/if}
 
         <div class="hint">
-          Press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to send request
+          Press <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Enter</kbd> to send request &nbsp;·&nbsp; <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Esc</kbd> to clear body
         </div>
       </div>
     </div>
@@ -868,6 +1273,104 @@
     cursor: not-allowed;
   }
 
+  .request-options-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    margin-top: -0.5rem;
+  }
+
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+  }
+
+  .toggle-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-track {
+    display: block;
+    width: 32px;
+    height: 18px;
+    background: #3a3a4a;
+    border-radius: 9px;
+    position: relative;
+    transition: background 0.2s;
+  }
+
+  .toggle-switch.active .toggle-track {
+    background: #646cff;
+  }
+
+  .toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: #ccc;
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .toggle-switch.active .toggle-thumb {
+    transform: translateX(14px);
+    background: #fff;
+  }
+
+  .toggle-text {
+    font-size: 0.75rem;
+    color: #888;
+    font-weight: 500;
+  }
+
+  .toggle-hint {
+    font-size: 0.7rem;
+    color: #666;
+    cursor: help;
+    position: relative;
+  }
+
+  .toggle-hint::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2a2a42;
+    color: #ccc;
+    font-size: 0.7rem;
+    font-weight: 400;
+    line-height: 1.4;
+    padding: 0.45rem 0.65rem;
+    border-radius: 6px;
+    border: 1px solid #4a4a5a;
+    white-space: normal;
+    width: max-content;
+    max-width: 260px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+  }
+
+  .toggle-hint:hover::after {
+    opacity: 1;
+  }
+
   .spinner {
     display: inline-block;
     width: 14px;
@@ -1010,6 +1513,198 @@
 
   .body-input:focus {
     border-color: #646cff;
+  }
+
+  .body-type-select {
+    background: #202038;
+    border: 1px solid #3a3a4a;
+    color: #ccc;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    border-radius: 5px;
+    cursor: pointer;
+    outline: none;
+    appearance: auto;
+  }
+
+  .body-type-select:focus {
+    border-color: #646cff;
+  }
+
+  .body-actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.35rem;
+  }
+
+  .body-action-btn {
+    background: transparent;
+    color: #888;
+    border: 1px solid #3a3a4a;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    transition: all 0.15s;
+  }
+
+  .body-action-btn:hover {
+    color: #ccc;
+    border-color: #646cff;
+    background: rgba(100, 108, 255, 0.08);
+  }
+
+  .body-action-icon {
+    font-size: 0.75rem;
+  }
+
+  .assist-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    user-select: none;
+    margin-left: auto;
+  }
+
+  .assist-label {
+    font-size: 0.7rem;
+    color: #888;
+    font-weight: 500;
+  }
+
+  .toggle-switch.small .toggle-track {
+    width: 26px;
+    height: 15px;
+    border-radius: 8px;
+  }
+
+  .toggle-switch.small .toggle-thumb {
+    width: 11px;
+    height: 11px;
+    top: 2px;
+    left: 2px;
+  }
+
+  .toggle-switch.small.active .toggle-thumb {
+    transform: translateX(11px);
+  }
+
+  .add-field-btn {
+    margin-top: 0.4rem;
+  }
+
+  .file-upload-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .file-field-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .file-field-label {
+    font-size: 0.72rem;
+    color: #888;
+    white-space: nowrap;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .file-field-name {
+    max-width: 180px;
+  }
+
+  .file-dropzone {
+    border: 2px dashed #3a3a4a;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: #1c1c32;
+    min-height: 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+
+  .file-dropzone:hover {
+    border-color: #646cff;
+    background: rgba(100, 108, 255, 0.05);
+  }
+
+  .file-hidden-input {
+    display: none;
+  }
+
+  .file-placeholder {
+    color: #666;
+    font-size: 0.8rem;
+  }
+
+  .file-hint {
+    color: #555;
+    font-size: 0.7rem;
+  }
+
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    width: 100%;
+  }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: #202038;
+    border: 1px solid #3a3a4a;
+    border-radius: 6px;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.78rem;
+  }
+
+  .file-icon {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+
+  .file-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #ccc;
+  }
+
+  .file-size {
+    font-size: 0.7rem;
+    color: #7a7a8e;
+    white-space: nowrap;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .file-remove-btn {
+    width: 22px;
+    height: 22px;
+    font-size: 0.9rem;
   }
 
   /* Error */
@@ -1159,9 +1854,10 @@
     justify-content: center;
     opacity: 0;
     transition: opacity 0.15s, color 0.15s, border-color 0.15s;
-    z-index: 2;
+    z-index: 5;
     padding: 0;
     line-height: 1;
+    pointer-events: auto;
   }
 
   .response-pre-wrapper:hover .response-copy-btn {
@@ -1173,6 +1869,7 @@
     border-color: #646cff;
     background: #323258;
   }
+
 
   .response-body {
     background: #202038;
@@ -1234,6 +1931,67 @@
     .response-body {
       background: #f5f5fa;
       border-color: #ddd;
+    }
+
+    .response-copy-btn {
+      background: #e8e8f0;
+      border-color: #ccc;
+      color: #666;
+    }
+
+    .response-copy-btn:hover {
+      background: #ddd;
+      border-color: #646cff;
+      color: #333;
+    }
+
+    .body-type-select {
+      background: #f0f0f5;
+      border-color: #ddd;
+      color: #333;
+    }
+
+    .body-action-btn {
+      border-color: #ddd;
+      color: #666;
+    }
+
+    .body-action-btn:hover {
+      color: #333;
+      background: rgba(100, 108, 255, 0.06);
+    }
+
+    .toggle-track {
+      background: #ccc;
+    }
+
+    .toggle-thumb {
+      background: #fff;
+    }
+
+    .toggle-hint::after {
+      background: #f5f5fa;
+      color: #333;
+      border-color: #ddd;
+    }
+
+    .file-dropzone {
+      background: #f5f5fa;
+      border-color: #ccc;
+    }
+
+    .file-dropzone:hover {
+      background: rgba(100, 108, 255, 0.05);
+      border-color: #646cff;
+    }
+
+    .file-item {
+      background: #f0f0f5;
+      border-color: #ddd;
+    }
+
+    .file-name {
+      color: #333;
     }
 
     .response-tabs {
