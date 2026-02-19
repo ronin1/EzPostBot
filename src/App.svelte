@@ -2,7 +2,7 @@
   import { saveRequest } from './lib/db.js';
   import HistoryDrawer from './lib/HistoryDrawer.svelte';
 
-  let url = $state('https://io.dev.clarityrcm.com/api/peripheral/health');
+  let url = $state(`${window.location.origin}/api/echo`);
   let method = $state('GET');
   let body = $state('');
   let bodyType = $state('json'); // 'json' | 'form' | 'file'
