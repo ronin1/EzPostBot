@@ -1829,12 +1829,15 @@
     font-size: 0.75rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
     overflow-x: auto;
-    max-height: 350px;
+    height: 350px;
+    min-height: 80px;
+    max-height: 80vh;
     overflow-y: auto;
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
     color: #ccc;
+    resize: vertical;
   }
 
   /* Response */
@@ -1945,11 +1948,14 @@
     font-size: 0.75rem;
     font-family: 'SF Mono', 'Fira Code', monospace;
     overflow-x: auto;
-    max-height: 350px;
+    height: 350px;
+    min-height: 80px;
+    max-height: 80vh;
     overflow-y: auto;
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
+    resize: vertical;
   }
 
   .curl-output {
