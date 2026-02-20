@@ -14,7 +14,7 @@ export async function saveRequest(record) {
 }
 
 /** Query requests with filters, pagination, and sorting */
-export async function queryRequests({ methodFilter, urlFilter, statusMin, statusMax, serverSideFilter, page = 1, pageSize = 20, sortBy = 'timestamp', sortDir = 'DESC' } = {}) {
+export async function queryRequests({ methodFilter, urlFilter, statusMin, statusMax, serverSideFilter, bodyText, bodyScope, bodyField, page = 1, pageSize = 20, sortBy = 'timestamp', sortDir = 'DESC' } = {}) {
   try {
     const params = new URLSearchParams();
     if (methodFilter && Array.isArray(methodFilter) && methodFilter.length > 0) {
@@ -26,6 +26,9 @@ export async function queryRequests({ methodFilter, urlFilter, statusMin, status
     if (statusMin != null && statusMin !== '') params.set('statusMin', statusMin);
     if (statusMax != null && statusMax !== '') params.set('statusMax', statusMax);
     if (serverSideFilter != null && serverSideFilter !== '') params.set('serverSide', serverSideFilter);
+    if (bodyText) params.set('bodyText', bodyText);
+    if (bodyScope) params.set('bodyScope', bodyScope);
+    if (bodyField) params.set('bodyField', bodyField);
     params.set('page', page);
     params.set('pageSize', pageSize);
     params.set('sortBy', sortBy);

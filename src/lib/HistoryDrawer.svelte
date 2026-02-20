@@ -1,16 +1,29 @@
 <script>
   import { queryRequests, deleteRequest, clearAllRequests } from './db.js';
 
-  let { open = $bindable(false), onReplay = () => {}, darkMode = true } = $props();
+  let { open = $bindable(false), onReplay = () => {}, darkMode = true, globalFontSize = 0.72 } = $props();
 
   // Filters
-  let filterMethods = $state([]);
-  let filterUrl = $state('');
-  let filterStatusMin = $state('');
-  let filterStatusMax = $state('');
-  let filterServerSide = $state('');
-  let sortBy = $state('timestamp');
-  let sortDir = $state('DESC');
+  let filterMethods = $state(JSON.parse(localStorage.getItem('filterMethods') || '[]'));
+  let filterUrl = $state(localStorage.getItem('filterUrl') || '');
+  let filterStatusMin = $state(localStorage.getItem('filterStatusMin') || '');
+  let filterStatusMax = $state(localStorage.getItem('filterStatusMax') || '');
+  let filterServerSide = $state(localStorage.getItem('filterServerSide') || '');
+  let sortBy = $state(localStorage.getItem('sortBy') || 'timestamp');
+  let sortDir = $state(localStorage.getItem('sortDir') || 'DESC');
+  let filterBodyText = $state(localStorage.getItem('filterBodyText') || '');
+  let filterBodyScope = $state(localStorage.getItem('filterBodyScope') || 'both'); // 'request' | 'response' | 'both'
+  let filterBodyField = $state(localStorage.getItem('filterBodyField') || 'both'); // 'header' | 'body' | 'both'
+  $effect(() => { localStorage.setItem('filterMethods', JSON.stringify(filterMethods)); });
+  $effect(() => { localStorage.setItem('filterUrl', filterUrl); });
+  $effect(() => { localStorage.setItem('filterStatusMin', filterStatusMin); });
+  $effect(() => { localStorage.setItem('filterStatusMax', filterStatusMax); });
+  $effect(() => { localStorage.setItem('filterServerSide', filterServerSide); });
+  $effect(() => { localStorage.setItem('sortBy', sortBy); });
+  $effect(() => { localStorage.setItem('sortDir', sortDir); });
+  $effect(() => { localStorage.setItem('filterBodyText', filterBodyText); });
+  $effect(() => { localStorage.setItem('filterBodyScope', filterBodyScope); });
+  $effect(() => { localStorage.setItem('filterBodyField', filterBodyField); });
 
   // Pagination
   let page = $state(1);
@@ -39,7 +52,11 @@
   // Data
   let rows = $state([]);
   let total = $state(0);
-  let expandedId = $state(null);
+  let expandedId = $state((() => { const v = localStorage.getItem('expandedId'); return v ? Number(v) : null; })());
+  $effect(() => {
+    if (expandedId != null) localStorage.setItem('expandedId', String(expandedId));
+    else localStorage.removeItem('expandedId');
+  });
 
   const allMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -62,7 +79,7 @@
   });
 
   $effect(() => {
-    filterMethods; filterUrl; filterStatusMin; filterStatusMax; filterServerSide; page; pageSize; sortBy; sortDir; open;
+    filterMethods; filterUrl; filterStatusMin; filterStatusMax; filterServerSide; filterBodyText; filterBodyScope; filterBodyField; page; pageSize; sortBy; sortDir; open;
     refresh();
   });
 
@@ -73,6 +90,9 @@
       statusMin: filterStatusMin || undefined,
       statusMax: filterStatusMax || undefined,
       serverSideFilter: filterServerSide || undefined,
+      bodyText: filterBodyText || undefined,
+      bodyScope: filterBodyText ? filterBodyScope : undefined,
+      bodyField: filterBodyText ? filterBodyField : undefined,
       page,
       pageSize,
       sortBy,
@@ -99,6 +119,17 @@
     }
   }
 
+  async function handleClearVisible() {
+    if (rows.length === 0) return;
+    if (!confirm(`Delete ${rows.length} visible item${rows.length > 1 ? 's' : ''}?`)) return;
+    for (const row of rows) {
+      await deleteRequest(row.id);
+    }
+    expandedId = null;
+    page = 1;
+    await refresh();
+  }
+
   function toggleExpand(id) {
     expandedId = expandedId === id ? null : id;
   }
@@ -109,6 +140,9 @@
     filterStatusMin = '';
     filterStatusMax = '';
     filterServerSide = '';
+    filterBodyText = '';
+    filterBodyScope = 'both';
+    filterBodyField = 'both';
     page = 1;
     sortBy = 'timestamp';
     sortDir = 'DESC';
@@ -149,6 +183,12 @@
   function truncateUrl(u) {
     return u || '';
   }
+
+  function maskAuth(text) {
+    return text.replace(/^(Authorization:\s*).+$/gim, '$1••••••••');
+  }
+
+  let hoveredPreId = $state(null);
 
   function buildStoredRequestText(row) {
     const lines = [];
@@ -246,6 +286,29 @@
         class="filter-input"
       />
     </div>
+    <div class="filter-group">
+      <span class="filter-label">Content Search</span>
+      <input
+        type="text"
+        bind:value={filterBodyText}
+        placeholder="Search headers/body..."
+        class="filter-input"
+      />
+      {#if filterBodyText}
+        <div class="body-search-toggles">
+          <div class="toggle-group">
+            <button class="search-chip" class:selected={filterBodyScope === 'both'} onclick={() => filterBodyScope = 'both'}>Both</button>
+            <button class="search-chip" class:selected={filterBodyScope === 'request'} onclick={() => filterBodyScope = 'request'}>Request</button>
+            <button class="search-chip" class:selected={filterBodyScope === 'response'} onclick={() => filterBodyScope = 'response'}>Response</button>
+          </div>
+          <div class="toggle-group">
+            <button class="search-chip" class:selected={filterBodyField === 'both'} onclick={() => filterBodyField = 'both'}>Both</button>
+            <button class="search-chip" class:selected={filterBodyField === 'header'} onclick={() => filterBodyField = 'header'}>Headers</button>
+            <button class="search-chip" class:selected={filterBodyField === 'body'} onclick={() => filterBodyField = 'body'}>Body</button>
+          </div>
+        </div>
+      {/if}
+    </div>
     <div class="filter-group mode-row">
       <div class="mode-left">
         <span class="filter-label">Mode</span>
@@ -282,7 +345,7 @@
       <div class="empty">No requests found</div>
     {/if}
     {#each rows as row (row.id)}
-      <div class="history-item">
+      <div class="history-item" class:expanded={expandedId === row.id}>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="item-summary" onclick={() => toggleExpand(row.id)} onkeydown={() => {}}>
           <span class="item-method" style="color: {getMethodColor(row.method)}">{row.method}</span>
@@ -299,8 +362,10 @@
         {#if expandedId === row.id}
           <div class="item-details">
             <div class="detail-row">
-              <strong>Mode:</strong> {row.server_side ? 'Server-side' : 'Client-side'}
-              {#if row.duration_ms != null}&nbsp;·&nbsp;<strong>Duration:</strong> {row.duration_ms}ms{/if}
+              <span class="detail-info">
+                <strong>Mode:</strong> {row.server_side ? 'Server-side' : 'Client-side'}
+                {#if row.duration_ms != null}&nbsp;·&nbsp;<strong>Duration:</strong> {row.duration_ms}ms{/if}
+              </span>
             </div>
 
             <div class="detail-tabs">
@@ -331,7 +396,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.error, `err-${row.id}`)} title="Copy">
                       {copiedId === `err-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre error-pre">{row.error}</pre>
+                    <pre class="detail-pre error-pre" style="font-size: {globalFontSize}rem">{row.error}</pre>
                   </div>
                 </div>
               {/if}
@@ -342,7 +407,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.response_headers, `resh-${row.id}`)} title="Copy">
                       {copiedId === `resh-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre">{row.response_headers}</pre>
+                    <pre class="detail-pre" style="font-size: {globalFontSize}rem">{row.response_headers}</pre>
                   </div>
                 </div>
               {/if}
@@ -353,7 +418,7 @@
                     <button class="copy-btn" onclick={() => copyText(row.response_body, `resb-${row.id}`)} title="Copy">
                       {copiedId === `resb-${row.id}` ? '✓' : '⧉'}
                     </button>
-                    <pre class="detail-pre">{row.response_body}</pre>
+                    <pre class="detail-pre" style="font-size: {globalFontSize}rem">{row.response_body}</pre>
                   </div>
                 </div>
               {/if}
@@ -366,16 +431,17 @@
                   <button class="copy-btn" onclick={() => copyText(row.diagnosis, `diag-${row.id}`)} title="Copy">
                     {copiedId === `diag-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre">{row.diagnosis}</pre>
+                  <pre class="detail-pre" style="font-size: {globalFontSize}rem">{row.diagnosis}</pre>
                 </div>
               </div>
             {:else if getItemTab(row.id) === 'request'}
               <div class="detail-section">
-                <div class="pre-wrapper">
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div class="pre-wrapper" onmouseenter={() => hoveredPreId = `req-${row.id}`} onmouseleave={() => hoveredPreId = null}>
                   <button class="copy-btn" onclick={() => copyText(buildStoredRequestText(row), `req-${row.id}`)} title="Copy">
                     {copiedId === `req-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre">{buildStoredRequestText(row)}</pre>
+                  <pre class="detail-pre" style="font-size: {globalFontSize}rem">{hoveredPreId === `req-${row.id}` ? buildStoredRequestText(row) : maskAuth(buildStoredRequestText(row))}</pre>
                 </div>
               </div>
             {:else if getItemTab(row.id) === 'preflight'}
@@ -384,7 +450,7 @@
                   <button class="copy-btn" onclick={() => copyText(row.preflight, `pf-${row.id}`)} title="Copy">
                     {copiedId === `pf-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre">{row.preflight}</pre>
+                  <pre class="detail-pre" style="font-size: {globalFontSize}rem">{row.preflight}</pre>
                 </div>
               </div>
             {/if}
@@ -405,9 +471,14 @@
       <span class="page-info">{page}/{totalPages} ({total})</span>
       <button class="page-btn" disabled={page >= totalPages} onclick={() => page++}>&raquo;</button>
     </div>
-    <button class="clear-all-btn" onclick={handleClearAll} disabled={total === 0}>
-      Clear All
-    </button>
+    <span class="clear-btns">
+      <button class="clear-all-btn" onclick={handleClearVisible} disabled={rows.length === 0}>
+        Clear Visible
+      </button>
+      <button class="clear-all-btn" onclick={handleClearAll} disabled={total === 0}>
+        Clear All
+      </button>
+    </span>
   </div>
 </div>
 
@@ -529,6 +600,44 @@
     color: #aac0ff;
   }
 
+  .body-search-toggles {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.1rem;
+  }
+
+  .toggle-group {
+    display: flex;
+    gap: 0.2rem;
+  }
+
+  .search-chip {
+    background: transparent;
+    border: 1px solid #3a3a4a;
+    color: #aaa;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.6rem;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    opacity: 0.75;
+  }
+
+  .search-chip:hover {
+    opacity: 0.8;
+    border-color: #646cff;
+  }
+
+  .search-chip.selected {
+    opacity: 1;
+    background: rgba(100, 108, 255, 0.15);
+    border-color: #646cff;
+    color: #aac0ff;
+  }
+
   .filter-group {
     display: flex;
     flex-direction: column;
@@ -617,9 +726,11 @@
   .sort-label {
     font-size: 0.8rem;
     color: #666;
-    padding: 0.2rem 0.45rem;
+    padding: 0.2rem 0.5rem;
     flex-shrink: 0;
     line-height: 1;
+    width: 28px;
+    text-align: center;
   }
 
   .sort-sep {
@@ -641,8 +752,10 @@
   }
 
   .sort-verb {
-    width: 80px;
+    width: 78px;
     flex-shrink: 0;
+    text-align: left;
+    padding-left: 0.55rem;
   }
 
   .sort-url {
@@ -651,7 +764,7 @@
   }
 
   .sort-date {
-    width: 160px;
+    width: 150px;
     flex-shrink: 0;
   }
 
@@ -683,12 +796,16 @@
     border-bottom: 1px solid #26263a;
   }
 
+  .history-item.expanded {
+    background: rgba(100, 108, 255, 0.14);
+  }
+
   .item-summary {
     display: grid;
-    grid-template-columns: 50px auto minmax(0, 1fr) auto auto 24px;
-    gap: 0.35rem;
+    grid-template-columns: 50px auto minmax(0, 1fr) 36px 110px 16px;
+    gap: 0.25rem;
     align-items: center;
-    padding: 0.45rem 1rem;
+    padding: 0.3rem 0.4rem;
     cursor: pointer;
     transition: background 0.15s;
     font-size: 0.73rem;
@@ -739,31 +856,41 @@
     font-weight: 600;
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 0.68rem;
-    text-align: right;
+    text-align: center;
     background: #23233a;
     padding: 0.1rem 0.3rem;
     border-radius: 3px;
+    width: 36px;
   }
 
   .item-time {
     color: #666;
     font-size: 0.63rem;
     white-space: nowrap;
+    width: 110px;
+    text-align: right;
+    padding-right: 0.5rem;
   }
 
   .item-delete {
-    background: transparent;
+    background: rgba(249, 62, 62, 0.15);
     border: none;
-    color: #666;
-    font-size: 1rem;
+    color: #cc5555;
+    font-size: 0.7rem;
     cursor: pointer;
-    padding: 0;
+    padding: 0.15rem 0.25rem;
+    margin-left: 0.25rem;
     line-height: 1;
-    border-radius: 0;
-    transition: color 0.2s;
+    border-radius: 3px;
+    transition: all 0.2s;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .item-delete:hover {
+    background: rgba(249, 62, 62, 0.35);
     color: #f93e3e;
   }
 
@@ -812,7 +939,16 @@
     font-size: 0.7rem;
     color: #aaa;
     margin-bottom: 0.35rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
+
+  .detail-info {
+    flex: 1;
+    min-width: 0;
+  }
+
 
   .detail-section {
     margin-bottom: 0.4rem;
@@ -927,7 +1063,7 @@
   .page-btn {
     background: transparent;
     border: 1px solid #4a4a5a;
-    color: #aaa;
+    color: #bbb;
     padding: 0.2rem 0.45rem;
     font-size: 0.68rem;
     border-radius: 4px;
@@ -947,7 +1083,13 @@
 
   .page-info {
     font-size: 0.68rem;
-    color: #888;
+    color: #aaa;
+  }
+
+  .clear-btns {
+    display: flex;
+    gap: 0.4rem;
+    margin-left: auto;
   }
 
   .clear-all-btn {
@@ -1027,6 +1169,18 @@
     color: #333;
   }
 
+  .light-theme .search-chip {
+    border-color: #a0a0b4;
+    color: #444;
+    opacity: 0.8;
+  }
+
+  .light-theme .search-chip.selected {
+    background: rgba(100, 108, 255, 0.12);
+    border-color: #646cff;
+    color: #333;
+  }
+
   .light-theme .item-mode-badge.server {
     background: rgba(100, 108, 255, 0.15);
     color: #4a5aaa;
@@ -1100,8 +1254,22 @@
     border-bottom-color: #a0a0b4;
   }
 
+  .light-theme .history-item.expanded {
+    background: rgba(100, 108, 255, 0.08);
+  }
+
   .light-theme .item-summary:hover {
     background: rgba(100, 108, 255, 0.06);
+  }
+
+  .light-theme .item-delete {
+    background: rgba(249, 62, 62, 0.1);
+    color: #bb4444;
+  }
+
+  .light-theme .item-delete:hover {
+    background: rgba(249, 62, 62, 0.25);
+    color: #d92020;
   }
 
   .light-theme .item-url {
@@ -1126,9 +1294,9 @@
   }
 
   .light-theme .detail-pre {
-    background: #dadaea;
+    background: #ececf4;
     border-color: #a0a0b4;
-    color: #2a2a3a;
+    color: #222;
   }
 
   .light-theme .copy-btn {
@@ -1146,7 +1314,22 @@
     color: #444;
   }
 
+
   .light-theme .panel-footer {
     border-top-color: #a0a0b4;
+  }
+
+  .light-theme .page-btn {
+    border-color: #8888a0;
+    color: #333;
+  }
+
+  .light-theme .page-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #111;
+  }
+
+  .light-theme .page-info {
+    color: #333;
   }
 </style>

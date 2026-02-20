@@ -2,28 +2,62 @@
   import { saveRequest } from './lib/db.js';
   import HistoryDrawer from './lib/HistoryDrawer.svelte';
 
-  let url = $state(`${window.location.origin}/api/echo`);
-  let method = $state('GET');
-  let body = $state('');
-  let bodyType = $state('json'); // 'json' | 'form' | 'file'
-  let formFields = $state([]);
+  let url = $state(localStorage.getItem('url') ?? `${window.location.origin}/api/echo`);
+  let method = $state(localStorage.getItem('method') || 'GET');
+  let body = $state(localStorage.getItem('body') ?? '');
+  let bodyType = $state(localStorage.getItem('bodyType') || 'json');
+  let formFields = $state(JSON.parse(localStorage.getItem('formFields') || '[]'));
   let selectedFiles = $state([]);
-  let fileFieldName = $state('file');
+  let fileFieldName = $state(localStorage.getItem('fileFieldName') ?? 'file');
   let fileInputEl = $state(null);
-  let headers = $state([]);
-  let queryParams = $state([]);
+  let headers = $state(JSON.parse(localStorage.getItem('headers') || '[]'));
+  let queryParams = $state(JSON.parse(localStorage.getItem('queryParams') || '[]'));
   let response = $state(null);
   let responseStatus = $state(null);
   let responseHeaders = $state('');
   let loading = $state(false);
+  let liveElapsed = $state(0);
+  let requestStartMs = $state(0);
+  $effect(() => {
+    if (!loading) return;
+    const t = requestStartMs;
+    const id = setInterval(() => { liveElapsed = Math.round(performance.now() - t); }, 50);
+    return () => clearInterval(id);
+  });
   let errorDebug = $state(null);
   let activeTab = $state('body');
   let responseDuration = $state(null);
-  let serverSide = $state(false);
+  let serverSide = $state(localStorage.getItem('serverSide') === 'true');
   let copiedPanel = $state(null);
   let copiedBody = $state(false);
-  let jsonAssist = $state(true);
+  let showHeaders = $state(localStorage.getItem('showHeaders') !== 'false');
+  let showQueryParams = $state(localStorage.getItem('showQueryParams') !== 'false');
+  let showRequestBody = $state(localStorage.getItem('showRequestBody') !== 'false');
+  let showResponse = $state(localStorage.getItem('showResponse') !== 'false');
+  let showCurl = $state(localStorage.getItem('showCurl') !== 'false');
+  let jsonAssist = $state(localStorage.getItem('jsonAssist') !== 'false');
   let bodyTextarea = $state(null);
+  let globalFontSize = $state(parseFloat(localStorage.getItem('globalFontSize')) || 0.8);
+  $effect(() => { localStorage.setItem('globalFontSize', String(globalFontSize)); });
+  $effect(() => { localStorage.setItem('method', method); });
+  $effect(() => { localStorage.setItem('bodyType', bodyType); });
+  $effect(() => { localStorage.setItem('serverSide', String(serverSide)); });
+  $effect(() => { localStorage.setItem('showHeaders', String(showHeaders)); });
+  $effect(() => { localStorage.setItem('showQueryParams', String(showQueryParams)); });
+  $effect(() => { localStorage.setItem('showRequestBody', String(showRequestBody)); });
+  $effect(() => { localStorage.setItem('showResponse', String(showResponse)); });
+  $effect(() => { localStorage.setItem('showCurl', String(showCurl)); });
+  $effect(() => { localStorage.setItem('jsonAssist', String(jsonAssist)); });
+  $effect(() => { localStorage.setItem('url', url); });
+  $effect(() => { localStorage.setItem('body', body); });
+  $effect(() => { localStorage.setItem('headers', JSON.stringify(headers)); });
+  $effect(() => { localStorage.setItem('queryParams', JSON.stringify(queryParams)); });
+  $effect(() => { localStorage.setItem('formFields', JSON.stringify(formFields)); });
+  $effect(() => { localStorage.setItem('fileFieldName', fileFieldName); });
+  const FONT_DEFAULT = 0.8;
+  const FONT_STEP = 0.04;
+  const FONT_MIN = FONT_DEFAULT - 10 * FONT_STEP;
+  const FONT_MAX = FONT_DEFAULT + 10 * FONT_STEP;
 
   const CLOSE_PAIRS = { '{': '}', '[': ']', '"': '"' };
 
@@ -131,8 +165,347 @@
     } catch {}
   }
 
-  let drawerOpen = $state(false);
+  function parseCurl(input) {
+    const text = input.trim().replace(/\\\n\s*/g, ' ');
+    if (!/^curl\s/i.test(text)) return null;
+
+    const tokens = [];
+    let i = 4; // skip "curl"
+    while (i < text.length) {
+      while (i < text.length && text[i] === ' ') i++;
+      if (i >= text.length) break;
+      let token = '';
+      if (text[i] === "'" || text[i] === '"') {
+        const q = text[i++];
+        while (i < text.length && text[i] !== q) {
+          if (text[i] === '\\' && q === '"') { i++; token += text[i] || ''; }
+          else token += text[i];
+          i++;
+        }
+        i++; // skip closing quote
+      } else {
+        while (i < text.length && text[i] !== ' ') { token += text[i]; i++; }
+      }
+      tokens.push(token);
+    }
+
+    let parsedMethod = null;
+    let parsedUrl = '';
+    const parsedHeaders = [];
+    let parsedData = null;
+    let isFormUrlEncoded = false;
+    let isFormMultipart = false;
+    const formParts = [];
+
+    for (let t = 0; t < tokens.length; t++) {
+      const tok = tokens[t];
+      if (tok === '-X' || tok === '--request') { parsedMethod = tokens[++t]?.toUpperCase(); }
+      else if (tok === '-H' || tok === '--header') { parsedHeaders.push(tokens[++t]); }
+      else if (tok === '-d' || tok === '--data' || tok === '--data-raw' || tok === '--data-binary') { parsedData = tokens[++t]; }
+      else if (tok === '--data-urlencode') { isFormUrlEncoded = true; formParts.push(tokens[++t]); }
+      else if (tok === '-F' || tok === '--form') { isFormMultipart = true; formParts.push(tokens[++t]); }
+      else if (!tok.startsWith('-') && !parsedUrl) { parsedUrl = tok; }
+    }
+
+    if (!parsedMethod) {
+      parsedMethod = (parsedData || isFormUrlEncoded || isFormMultipart) ? 'POST' : 'GET';
+    }
+
+    return { method: parsedMethod, url: parsedUrl, headers: parsedHeaders, data: parsedData, isFormUrlEncoded, isFormMultipart, formParts };
+  }
+
+  let importStatus = $state(null);
+  async function importCurl() {
+    try {
+      const clip = await navigator.clipboard.readText();
+      const parsed = parseCurl(clip);
+      if (!parsed) {
+        importStatus = 'invalid';
+        setTimeout(() => { if (importStatus === 'invalid') importStatus = null; }, 2000);
+        return;
+      }
+
+      method = parsed.method;
+      try {
+        const u = new URL(parsed.url);
+        u.search = '';
+        url = u.toString();
+        queryParams = [];
+        for (const [k, v] of new URL(parsed.url).searchParams.entries()) {
+          queryParams = [...queryParams, { key: k, value: v }];
+        }
+      } catch {
+        url = parsed.url;
+        queryParams = [];
+      }
+
+      headers = [];
+      let detectedCt = '';
+      for (const h of parsed.headers) {
+        const idx = h.indexOf(':');
+        if (idx < 0) continue;
+        const key = h.slice(0, idx).trim();
+        const val = h.slice(idx + 1).trim();
+        if (key.toLowerCase() === 'content-type') { detectedCt = val; continue; }
+        headers = [...headers, { key, value: val }];
+      }
+
+      formFields = [];
+      selectedFiles = [];
+      body = '';
+
+      if (parsed.isFormMultipart) {
+        bodyType = 'form';
+        formFields = parsed.formParts.filter(p => !p.includes('=@')).map(p => {
+          const idx = p.indexOf('=');
+          return { key: p.slice(0, idx), value: p.slice(idx + 1) };
+        });
+      } else if (parsed.isFormUrlEncoded || detectedCt.includes('application/x-www-form-urlencoded')) {
+        bodyType = 'form';
+        const src = parsed.isFormUrlEncoded ? parsed.formParts.join('&') : (parsed.data || '');
+        formFields = src.split('&').filter(Boolean).map(pair => {
+          const idx = pair.indexOf('=');
+          return idx >= 0
+            ? { key: decodeURIComponent(pair.slice(0, idx)), value: decodeURIComponent(pair.slice(idx + 1)) }
+            : { key: decodeURIComponent(pair), value: '' };
+        });
+      } else if (parsed.data) {
+        bodyType = 'json';
+        body = parsed.data;
+      } else {
+        bodyType = 'json';
+        body = '';
+      }
+
+      importStatus = 'ok';
+      setTimeout(() => { if (importStatus === 'ok') importStatus = null; }, 1500);
+    } catch {
+      importStatus = 'error';
+      setTimeout(() => { if (importStatus === 'error') importStatus = null; }, 2000);
+    }
+  }
+
+  const JWT_RE = /^Bearer\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)$/i;
+
+  function isJwt(value) {
+    return JWT_RE.test(value.trim());
+  }
+
+  function decodeJwt(value) {
+    const m = value.trim().match(JWT_RE);
+    if (!m) return null;
+    const parts = m[1].split('.');
+    const b64decode = (s) => {
+      const padded = s.replace(/-/g, '+').replace(/_/g, '/');
+      try { return JSON.parse(atob(padded)); } catch { return null; }
+    };
+    const header = b64decode(parts[0]);
+    const payload = b64decode(parts[1]);
+    const signature = parts[2] || '';
+
+    let expiry = null;
+    let isExpired = false;
+    if (payload?.exp) {
+      expiry = new Date(payload.exp * 1000);
+      isExpired = expiry < new Date();
+    }
+    let issuedAt = payload?.iat ? new Date(payload.iat * 1000) : null;
+    let notBefore = payload?.nbf ? new Date(payload.nbf * 1000) : null;
+
+    return { header, payload, signature, rawToken: m[1], expiry, isExpired, issuedAt, notBefore };
+  }
+
+  let jwtModal = $state(null);
+  let jwtVerifyStatus = $state(null);
+  let copiedJwtSection = $state(null);
+
+  async function copyJwtSection(text, id) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedJwtSection = id;
+      setTimeout(() => { if (copiedJwtSection === id) copiedJwtSection = null; }, 1500);
+    } catch {}
+  } // null | 'loading' | 'valid' | 'invalid' | 'error:message'
+
+  function openJwtModal(value) {
+    jwtModal = decodeJwt(value);
+    jwtVerifyStatus = null;
+  }
+
+  function closeJwtModal() {
+    jwtModal = null;
+    jwtVerifyStatus = null;
+  }
+
+  const ALG_MAP = {
+    RS256: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    RS384: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-384' },
+    RS512: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-512' },
+    ES256: { name: 'ECDSA', namedCurve: 'P-256', hash: 'SHA-256' },
+    ES384: { name: 'ECDSA', namedCurve: 'P-384', hash: 'SHA-384' },
+    ES512: { name: 'ECDSA', namedCurve: 'P-521', hash: 'SHA-512' },
+  };
+
+  function b64urlToUint8(s) {
+    const padded = s.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(padded);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+
+  async function fetchJwks(issuer) {
+    const base = issuer.replace(/\/+$/, '');
+    const urls = [
+      `${base}/.well-known/jwks.json`,
+      `${base}/.well-known/openid-configuration`,
+    ];
+
+    // Try direct fetch first, then server-side proxy
+    for (const jwksUrl of [urls[0]]) {
+      try {
+        let res = await fetch(jwksUrl);
+        if (!res.ok) {
+          res = await fetch(`/api/proxy`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: jwksUrl, method: 'GET', headers: {} }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.body) return JSON.parse(data.body);
+          }
+        } else {
+          return await res.json();
+        }
+      } catch { /* try next */ }
+    }
+
+    // Try OIDC discovery
+    try {
+      let res = await fetch(urls[1]);
+      if (!res.ok) {
+        res = await fetch(`/api/proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: urls[1], method: 'GET', headers: {} }),
+        });
+      }
+      const config = res.ok ? await res.json() : JSON.parse((await res.json()).body);
+      if (config.jwks_uri) {
+        let jwksRes = await fetch(config.jwks_uri);
+        if (!jwksRes.ok) {
+          jwksRes = await fetch(`/api/proxy`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: config.jwks_uri, method: 'GET', headers: {} }),
+          });
+          if (jwksRes.ok) {
+            const data = await jwksRes.json();
+            if (data.body) return JSON.parse(data.body);
+          }
+        } else {
+          return await jwksRes.json();
+        }
+      }
+    } catch { /* fall through */ }
+
+    return null;
+  }
+
+  async function importKey(jwk, alg) {
+    const algInfo = ALG_MAP[alg];
+    if (!algInfo) throw new Error(`Unsupported algorithm: ${alg}`);
+
+    const importAlg = alg.startsWith('ES')
+      ? { name: algInfo.name, namedCurve: algInfo.namedCurve }
+      : { name: algInfo.name, hash: algInfo.hash };
+
+    return crypto.subtle.importKey('jwk', jwk, importAlg, false, ['verify']);
+  }
+
+  async function verifyJwt() {
+    if (!jwtModal) return;
+    jwtVerifyStatus = 'loading';
+
+    try {
+      const { header, payload, rawToken } = jwtModal;
+      const alg = header?.alg;
+
+      if (!ALG_MAP[alg]) {
+        jwtVerifyStatus = `error:Algorithm "${alg}" not supported for browser verification`;
+        return;
+      }
+
+      const iss = payload?.iss;
+      if (!iss) {
+        jwtVerifyStatus = 'error:No "iss" claim found in token';
+        return;
+      }
+
+      const jwks = await fetchJwks(iss);
+      if (!jwks?.keys?.length) {
+        jwtVerifyStatus = 'error:Could not fetch JWKS from issuer';
+        return;
+      }
+
+      const kid = header?.kid;
+      let key = kid ? jwks.keys.find(k => k.kid === kid) : jwks.keys[0];
+      if (!key) {
+        jwtVerifyStatus = `error:No matching key found for kid "${kid}"`;
+        return;
+      }
+
+      const cryptoKey = await importKey(key, alg);
+      const parts = rawToken.split('.');
+      const signedData = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+      let sigBytes = b64urlToUint8(parts[2]);
+
+      // ECDSA signatures from JWTs are in raw r||s format already
+      const verifyAlg = alg.startsWith('ES')
+        ? { name: ALG_MAP[alg].name, hash: ALG_MAP[alg].hash }
+        : { name: ALG_MAP[alg].name };
+
+      const valid = await crypto.subtle.verify(verifyAlg, cryptoKey, sigBytes, signedData);
+      jwtVerifyStatus = valid ? 'valid' : 'invalid';
+    } catch (err) {
+      jwtVerifyStatus = `error:${err.message}`;
+    }
+  }
+
+  let drawerOpen = $state(localStorage.getItem('drawerOpen') === 'true');
+  $effect(() => { localStorage.setItem('drawerOpen', String(drawerOpen)); });
   let drawerRef = $state(null);
+  let headerRowEl = $state(null);
+  let keyColWidth = $state(parseInt(localStorage.getItem('keyColWidth')) || 180);
+  $effect(() => { localStorage.setItem('keyColWidth', String(keyColWidth)); });
+  let keyColDragging = $state(false);
+
+  function startKeyColResize(e) {
+    e.preventDefault();
+    keyColDragging = true;
+    const startX = e.clientX;
+    const startW = keyColWidth;
+    function onMove(ev) {
+      keyColWidth = Math.max(80, Math.min(400, startW + ev.clientX - startX));
+    }
+    function onUp() {
+      keyColDragging = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+  let showTitle = $state(true);
+  $effect(() => {
+    if (!headerRowEl) return;
+    const ro = new ResizeObserver(([entry]) => {
+      showTitle = entry.contentRect.width > 420;
+    });
+    ro.observe(headerRowEl);
+    return () => ro.disconnect();
+  });
 
   const MIN_DRAWER = 260;
   const DEFAULT_DRAWER_RATIO = 0.42;
@@ -146,12 +519,12 @@
   }
 
   // Resize state
-  let drawerWidth = $state(getDefaultDrawerWidth());
+  let drawerWidth = $state(parseInt(localStorage.getItem('drawerWidth')) || getDefaultDrawerWidth());
+  $effect(() => { localStorage.setItem('drawerWidth', String(drawerWidth)); });
   let isResizing = $state(false);
 
   function toggleHistoryDrawer() {
     if (!drawerOpen) {
-      drawerWidth = getDefaultDrawerWidth();
       drawerOpen = true;
       return;
     }
@@ -271,6 +644,12 @@
 
     return parts.join(' \\\n  ');
   });
+
+  const curlCommandMasked = $derived(
+    curlCommand.replace(/(-H\s+(['"]))(Authorization:\s*)(.*?)(\2)/gi, '$1$3••••••••$5')
+  );
+
+  let curlHovered = $state(false);
 
   let themeMode = $state(localStorage.getItem('theme') || 'auto');
 
@@ -414,6 +793,8 @@
     }
 
     loading = true;
+    requestStartMs = performance.now();
+    liveElapsed = 0;
     errorDebug = null;
     response = null;
     responseStatus = null;
@@ -481,6 +862,7 @@
     }
 
     loading = false;
+    showResponse = true;
   }
 
   async function sendServerSide(requestUrl, opts, requestDebug, requestHeadersStr, requestBodyStr) {
@@ -759,13 +1141,14 @@
 
     const reqBody = row.request_body || '';
     const contentType = headers.find(h => h.key.toLowerCase() === 'content-type');
-    if (contentType && contentType.value.includes('multipart/form-data')) {
+    const ctValue = contentType?.value || '';
+    if (ctValue.includes('multipart/form-data') || reqBody.startsWith('[File]')) {
       bodyType = 'file';
       body = '';
       formFields = [];
       selectedFiles = [];
       fileFieldName = 'file';
-    } else if (contentType && contentType.value.includes('application/x-www-form-urlencoded') && reqBody) {
+    } else if (ctValue.includes('application/x-www-form-urlencoded') && reqBody) {
       bodyType = 'form';
       body = '';
       selectedFiles = [];
@@ -783,6 +1166,14 @@
       selectedFiles = [];
     }
     serverSide = !!row.server_side;
+    headers = headers.filter(h => h.key.toLowerCase() !== 'content-type');
+
+    showResponse = false;
+    errorDebug = null;
+    response = null;
+    responseStatus = null;
+    responseHeaders = '';
+    responseDuration = null;
   }
 </script>
 
@@ -791,7 +1182,7 @@
 <div class="app-layout" class:resizing={isResizing} class:light-theme={!isDarkMode}>
   {#if drawerOpen}
     <div class="drawer-pane" style="width: {drawerWidth}px; min-width: {MIN_DRAWER}px">
-      <HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} darkMode={isDarkMode} />
+      <HistoryDrawer bind:this={drawerRef} bind:open={drawerOpen} onReplay={handleReplay} darkMode={isDarkMode} globalFontSize={globalFontSize} />
     </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-handle" onmousedown={startResize}>
@@ -803,7 +1194,7 @@
     <div class="main-scroll">
       <div class="main-content">
         <div class="app-header">
-          <div class="app-header-row">
+          <div class="app-header-row" bind:this={headerRowEl}>
             <button class="history-toggle" onclick={toggleHistoryDrawer} title={`Request History (${navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+H)`}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 {#if drawerOpen}
@@ -816,14 +1207,27 @@
               </svg>
               {drawerOpen ? 'Hide' : 'History'}
             </button>
-            <div>
-              <h1>👾 EzPostBot</h1>
-              <p class="subtitle">Test API endpoints directly from your browser</p>
-            </div>
-            <button class="theme-toggle" onclick={cycleTheme} title={`Theme: ${themeMode}`}>
-              <span class="theme-icon">{getThemeIcon(themeMode)}</span>
-              <span class="theme-label">{themeMode === 'auto' ? 'Auto' : themeMode === 'light' ? 'Light' : 'Dark'}</span>
-            </button>
+            {#if showTitle}
+              <h1><span style="font-size: 1.75rem; vertical-align: -0.15em">👾</span> EzPostBot</h1>
+            {/if}
+            <span class="top-controls">
+              <label class="toggle-label top-toggle" title="Send request from the backend server, bypassing CORS preflight and browser restrictions">
+                <span class="toggle-switch" class:active={serverSide}>
+                  <input type="checkbox" bind:checked={serverSide} />
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
+                <span class="toggle-text">Server-side</span>
+              </label>
+              <span class="global-font-controls">
+                <button class="global-font-btn" disabled={globalFontSize <= FONT_MIN} onclick={() => { globalFontSize = +(globalFontSize - FONT_STEP).toFixed(2); }} title="Decrease text size">A−</button>
+                <button class="global-font-btn" disabled={Math.abs(globalFontSize - FONT_DEFAULT) < 0.01} onclick={() => { globalFontSize = FONT_DEFAULT; }} title="Reset text size">A</button>
+                <button class="global-font-btn" disabled={globalFontSize >= FONT_MAX} onclick={() => { globalFontSize = +(globalFontSize + FONT_STEP).toFixed(2); }} title="Increase text size">A+</button>
+              </span>
+              <button class="theme-toggle" onclick={cycleTheme} title={`Theme: ${themeMode}`}>
+                <span class="theme-icon">{getThemeIcon(themeMode)}</span>
+                <span class="theme-label">{themeMode === 'auto' ? 'Auto' : themeMode === 'light' ? 'Light' : 'Dark'}</span>
+              </button>
+            </span>
           </div>
         </div>
 
@@ -839,6 +1243,7 @@
               bind:value={url}
               placeholder="Enter request URL..."
               class="url-input"
+              style="font-size: {globalFontSize}rem"
             />
             {#if querySuffix}
               <span class="url-query-preview" title={querySuffix}>{querySuffix}</span>
@@ -846,33 +1251,29 @@
           </div>
           <button class="send-btn" onclick={sendRequest} disabled={loading}>
             {#if loading}
-              <span class="spinner"></span> Sending...
+              <span class="spinner"></span> {liveElapsed < 1000 ? `${liveElapsed}ms` : `${(liveElapsed / 1000).toFixed(1)}s`}
             {:else}
               Send
             {/if}
           </button>
         </div>
 
-        <div class="request-options-bar">
-          <label class="toggle-label">
-            <span class="toggle-switch" class:active={serverSide}>
-              <input type="checkbox" bind:checked={serverSide} />
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </span>
-            <span class="toggle-text">Server-side</span>
-            <span class="toggle-hint" data-tip="Send request from the backend server, bypassing CORS preflight and browser restrictions">ⓘ</span>
-          </label>
-        </div>
-
         <!-- Headers Section -->
         <div class="section">
-          <div class="section-header">
-            <span class="section-title">Headers</span>
-            <button class="add-header-btn" onclick={addHeader}>
-              + Add Header
-            </button>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="section-header" class:collapsible={headers.length > 0} onclick={() => { if (headers.length > 0) showHeaders = !showHeaders; }} onkeydown={() => {}}>
+            <span class="section-title" class:collapsed={!showHeaders && headers.length > 0}>
+              <span class="collapse-arrow">{headers.length > 0 ? (showHeaders ? '▾' : '▸') : '▾'}</span> Headers
+              {#if !showHeaders && headers.length > 0}<span class="badge">{headers.length}</span>{/if}
+            </span>
+            {#if showHeaders}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <button class="add-header-btn" onclick={(e) => { e.stopPropagation(); addHeader(); }}>
+                + Add Header
+              </button>
+            {/if}
           </div>
-          {#if headers.length > 0}
+          {#if showHeaders && headers.length > 0}
             <div class="headers-list">
               {#each headers as header, i}
                 <div class="header-row">
@@ -881,13 +1282,23 @@
                     bind:value={header.key}
                     placeholder="Header name"
                     class="header-input key-input"
+                    style="width: {keyColWidth}px"
                   />
-                  <input
-                    type="text"
-                    bind:value={header.value}
-                    placeholder="Value"
-                    class="header-input value-input"
-                  />
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div class="key-col-resize" onmousedown={startKeyColResize}></div>
+                  <span class="value-input-wrap">
+                    <input
+                      type="text"
+                      bind:value={header.value}
+                      placeholder="Value"
+                      class="header-input value-input"
+                      class:secret={header.key.trim().toLowerCase() === 'authorization'}
+                      class:has-jwt-btn={header.key.trim().toLowerCase() === 'authorization' && isJwt(header.value)}
+                    />
+                    {#if header.key.trim().toLowerCase() === 'authorization' && isJwt(header.value)}
+                      <button class="jwt-badge" onclick={() => openJwtModal(header.value)} title="Decode JWT token">🔑 JWT</button>
+                    {/if}
+                  </span>
                   <button class="remove-btn" onclick={() => removeHeader(i)} title="Remove header">
                     &times;
                   </button>
@@ -899,13 +1310,20 @@
 
         <!-- Query Params Section -->
         <div class="section">
-          <div class="section-header">
-            <span class="section-title">Query Params</span>
-            <button class="add-header-btn" onclick={addQueryParam}>
-              + Add Param
-            </button>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="section-header" class:collapsible={queryParams.length > 0} onclick={() => { if (queryParams.length > 0) showQueryParams = !showQueryParams; }} onkeydown={() => {}}>
+            <span class="section-title" class:collapsed={!showQueryParams && queryParams.length > 0}>
+              <span class="collapse-arrow">{queryParams.length > 0 ? (showQueryParams ? '▾' : '▸') : '▾'}</span> Query Params
+              {#if !showQueryParams && queryParams.length > 0}<span class="badge">{queryParams.length}</span>{/if}
+            </span>
+            {#if showQueryParams}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <button class="add-header-btn" onclick={(e) => { e.stopPropagation(); addQueryParam(); }}>
+                + Add Param
+              </button>
+            {/if}
           </div>
-          {#if queryParams.length > 0}
+          {#if showQueryParams && queryParams.length > 0}
             <div class="headers-list">
               {#each queryParams as param, i}
                 <div class="header-row">
@@ -914,7 +1332,10 @@
                     bind:value={param.key}
                     placeholder="Param name"
                     class="header-input key-input"
+                    style="width: {keyColWidth}px"
                   />
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div class="key-col-resize" onmousedown={startKeyColResize}></div>
                   <input
                     type="text"
                     bind:value={param.value}
@@ -933,16 +1354,23 @@
         <!-- Body Section (conditional) -->
         {#if showBody}
           <div class="section">
-            <div class="section-header">
-              <span class="section-title">Request Body</span>
-              <select bind:value={bodyType} class="body-type-select">
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="section-header collapsible" onclick={() => showRequestBody = !showRequestBody} onkeydown={() => {}}>
+              <span class="section-title" class:collapsed={!showRequestBody}>
+                <span class="collapse-arrow">{showRequestBody ? '▾' : '▸'}</span> Request Body
+              </span>
+              {#if showRequestBody}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <select bind:value={bodyType} class="body-type-select" onclick={(e) => e.stopPropagation()}>
                 <option value="json">JSON</option>
                 <option value="form">Form</option>
                 {#if allowFile}
                   <option value="file">File</option>
                 {/if}
               </select>
+              {/if}
             </div>
+            {#if showRequestBody}
             {#if bodyType === 'json'}
               <textarea
                 bind:this={bodyTextarea}
@@ -953,6 +1381,7 @@
                 class:mono-assist={jsonAssist}
                 rows="6"
                 spellcheck="false"
+                style="font-size: {globalFontSize}rem"
               ></textarea>
               <div class="body-actions">
                 <button class="body-action-btn" onclick={formatJson} title="Format JSON">
@@ -964,13 +1393,18 @@
                 <button class="body-action-btn" onclick={() => { body = ''; }} title="Clear body">
                   <span class="body-action-icon">✕</span> Clear <kbd class="btn-kbd">{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Esc</kbd>
                 </button>
-                <label class="assist-toggle" title="Auto-close brackets, quotes, and smart indentation">
-                  <span class="toggle-switch small" class:active={jsonAssist}>
-                    <input type="checkbox" bind:checked={jsonAssist} />
-                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="body-right-controls">
+                  <span class="hint inline-hint">
+                    Press <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Enter</kbd> to send
                   </span>
-                  <span class="assist-label">Smart Edit</span>
-                </label>
+                  <label class="assist-toggle" title="Auto-close brackets, quotes, and smart indentation">
+                    <span class="toggle-switch small" class:active={jsonAssist}>
+                      <input type="checkbox" bind:checked={jsonAssist} />
+                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    </span>
+                    <span class="assist-label">Smart Edit</span>
+                  </label>
+                </span>
               </div>
             {:else if bodyType === 'form'}
               <div class="headers-list">
@@ -981,7 +1415,10 @@
                       bind:value={field.key}
                       placeholder="Field name"
                       class="header-input key-input"
+                      style="width: {keyColWidth}px"
                     />
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div class="key-col-resize" onmousedown={startKeyColResize}></div>
                     <input
                       type="text"
                       bind:value={field.value}
@@ -994,9 +1431,16 @@
                   </div>
                 {/each}
               </div>
-              <button class="add-header-btn add-field-btn" onclick={addFormField}>
-                + Add Field
-              </button>
+              <div class="form-actions">
+                <button class="add-header-btn add-field-btn" onclick={addFormField}>
+                  + Add Field
+                </button>
+                {#if formFields.length > 0}
+                  <button class="body-action-btn" onclick={() => { formFields = []; }}>
+                    <span class="body-action-icon">✕</span> Clear
+                  </button>
+                {/if}
+              </div>
             {:else}
               <div class="file-upload-section">
                 <div class="file-field-row">
@@ -1042,7 +1486,13 @@
                     <span class="file-placeholder">Click to select files</span>
                   {/if}
                 </div>
+                {#if selectedFiles.length > 0}
+                  <button class="body-action-btn file-clear-btn" onclick={() => { selectedFiles = []; fileFieldName = 'file'; }}>
+                    <span class="body-action-icon">✕</span> Clear
+                  </button>
+                {/if}
               </div>
+            {/if}
             {/if}
           </div>
         {/if}
@@ -1072,28 +1522,28 @@
               </div>
               {#if activeTab === 'rawResponse'}
                 <div class="response-pre-wrapper">
-                  <pre class="debug-body">{errorDebug.rawResponse || '(no response)'}</pre>
+                  <pre class="debug-body" style="font-size: {globalFontSize}rem">{errorDebug.rawResponse || '(no response)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.rawResponse || '', 'dbg-response')} title="Copy">
                     {copiedPanel === 'dbg-response' ? '✓' : '⧉'}
                   </button>
                 </div>
               {:else if activeTab === 'diagnosis'}
                 <div class="response-pre-wrapper">
-                  <pre class="debug-body">{errorDebug.diagnosis || '(no diagnosis available)'}</pre>
+                  <pre class="debug-body" style="font-size: {globalFontSize}rem">{errorDebug.diagnosis || '(no diagnosis available)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.diagnosis || '', 'dbg-diagnosis')} title="Copy">
                     {copiedPanel === 'dbg-diagnosis' ? '✓' : '⧉'}
                   </button>
                 </div>
               {:else if activeTab === 'request'}
                 <div class="response-pre-wrapper">
-                  <pre class="debug-body">{errorDebug.request || '(no request info)'}</pre>
+                  <pre class="debug-body" style="font-size: {globalFontSize}rem">{errorDebug.request || '(no request info)'}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.request || '', 'dbg-request')} title="Copy">
                     {copiedPanel === 'dbg-request' ? '✓' : '⧉'}
                   </button>
                 </div>
               {:else if activeTab === 'preflight'}
                 <div class="response-pre-wrapper">
-                  <pre class="debug-body">{errorDebug.preflight}</pre>
+                  <pre class="debug-body" style="font-size: {globalFontSize}rem">{errorDebug.preflight}</pre>
                   <button class="response-copy-btn" onclick={() => copyPanelText(errorDebug.preflight || '', 'dbg-preflight')} title="Copy">
                     {copiedPanel === 'dbg-preflight' ? '✓' : '⧉'}
                   </button>
@@ -1106,8 +1556,11 @@
         <!-- Success Response Section -->
         {#if responseStatus && !errorDebug}
           <div class="section">
-            <div class="section-header">
-              <span class="section-title">Response</span>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="section-header collapsible" onclick={() => showResponse = !showResponse} onkeydown={() => {}}>
+              <span class="section-title" class:collapsed={!showResponse}>
+                <span class="collapse-arrow">{showResponse ? '▾' : '▸'}</span> Response
+              </span>
               <span class="response-status-group">
                 {#if responseDuration !== null}
                   <span class="response-duration">{responseDuration}ms</span>
@@ -1118,6 +1571,7 @@
               </span>
             </div>
 
+            {#if showResponse}
             <div class="response-tabs">
               <button
                 class="tab-btn"
@@ -1133,40 +1587,127 @@
 
             {#if activeTab === 'body'}
               <div class="response-pre-wrapper">
-                <pre class="response-body">{response || '(empty response)'}</pre>
+                <pre class="response-body" style="font-size: {globalFontSize}rem">{response || '(empty response)'}</pre>
                 <button class="response-copy-btn" onclick={() => copyPanelText(response || '', 'body')} title="Copy">
                   {copiedPanel === 'body' ? '✓' : '⧉'}
                 </button>
               </div>
             {:else}
               <div class="response-pre-wrapper">
-                <pre class="response-body">{responseHeaders || '(no headers)'}</pre>
+                <pre class="response-body" style="font-size: {globalFontSize}rem">{responseHeaders || '(no headers)'}</pre>
                 <button class="response-copy-btn" onclick={() => copyPanelText(responseHeaders || '', 'headers')} title="Copy">
                   {copiedPanel === 'headers' ? '✓' : '⧉'}
                 </button>
               </div>
             {/if}
+            {/if}
           </div>
         {/if}
 
         <div class="section">
-          <div class="section-header">
-            <span class="section-title">cURL Command</span>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="section-header collapsible" onclick={() => showCurl = !showCurl} onkeydown={() => {}}>
+            <span class="section-title" class:collapsed={!showCurl}>
+              <span class="collapse-arrow">{showCurl ? '▾' : '▸'}</span> cURL Command
+            </span>
+            <button class="curl-import-btn" onclick={(e) => { e.stopPropagation(); importCurl(); }} title="Import cURL command from clipboard">
+              {#if importStatus === 'ok'}✓ Imported{:else if importStatus === 'invalid'}✕ Not a curl command{:else if importStatus === 'error'}✕ Clipboard error{:else}📋 Import Paste Buffer{/if}
+            </button>
           </div>
-          <div class="response-pre-wrapper">
-            <pre class="curl-output">{curlCommand}</pre>
-            <button class="response-copy-btn" onclick={() => copyPanelText(curlCommand, 'curl')} title="Copy cURL command">
-              {copiedPanel === 'curl' ? '✓' : '⧉'}
+          {#if showCurl}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="response-pre-wrapper" onmouseenter={() => curlHovered = true} onmouseleave={() => curlHovered = false}>
+              <pre class="curl-output" style="font-size: {globalFontSize}rem">{curlHovered ? curlCommand : curlCommandMasked}</pre>
+              <button class="response-copy-btn" onclick={() => copyPanelText(curlCommand, 'curl')} title="Copy cURL command">
+                {copiedPanel === 'curl' ? '✓' : '⧉'}
+              </button>
+            </div>
+          {/if}
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  {#if jwtModal}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="jwt-overlay" onclick={closeJwtModal} onkeydown={() => {}}>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="jwt-modal" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+        <div class="jwt-modal-header">
+          <span class="jwt-modal-title">🔑 JWT Token</span>
+          <span class="jwt-size-badge">{jwtModal.rawToken.length} chars · {new Blob([jwtModal.rawToken]).size} bytes</span>
+          <span class="jwt-expiry-badge" class:expired={jwtModal.isExpired} class:valid={!jwtModal.isExpired && jwtModal.expiry}>
+            {#if jwtModal.expiry}
+              {jwtModal.isExpired ? '✕ Expired' : '✓ Not Expired'}
+            {:else}
+              No expiry claim
+            {/if}
+          </span>
+          <button class="jwt-close-btn" onclick={closeJwtModal}>✕</button>
+        </div>
+
+        <div class="jwt-section">
+          <div class="jwt-section-label">Header <span class="jwt-alg">{jwtModal.header?.alg || '?'} · {jwtModal.header?.typ || '?'}</span></div>
+          <div class="jwt-pre-wrapper">
+            <pre class="jwt-pre" style="font-size: {globalFontSize}rem">{jwtModal.header ? JSON.stringify(jwtModal.header, null, 2) : '(unable to decode)'}</pre>
+            <button class="jwt-copy-btn" onclick={() => copyJwtSection(JSON.stringify(jwtModal.header, null, 2), 'header')} title="Copy">
+              {copiedJwtSection === 'header' ? '✓' : '⧉'}
             </button>
           </div>
         </div>
 
-        <div class="hint">
-          Press <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Enter</kbd> to send request
+        <div class="jwt-section">
+          <div class="jwt-section-label">Payload</div>
+          <div class="jwt-pre-wrapper">
+            <pre class="jwt-pre jwt-payload" style="font-size: {globalFontSize}rem">{jwtModal.payload ? JSON.stringify(jwtModal.payload, null, 2) : '(unable to decode)'}</pre>
+            <button class="jwt-copy-btn" onclick={() => copyJwtSection(JSON.stringify(jwtModal.payload, null, 2), 'payload')} title="Copy">
+              {copiedJwtSection === 'payload' ? '✓' : '⧉'}
+            </button>
+          </div>
+          {#if jwtModal.issuedAt || jwtModal.expiry || jwtModal.notBefore}
+            <div class="jwt-timestamps">
+              {#if jwtModal.issuedAt}<div><strong>Issued:</strong> {jwtModal.issuedAt.toLocaleString()}</div>{/if}
+              {#if jwtModal.notBefore}<div><strong>Not Before:</strong> {jwtModal.notBefore.toLocaleString()}</div>{/if}
+              {#if jwtModal.expiry}<div><strong>Expires:</strong> {jwtModal.expiry.toLocaleString()}</div>{/if}
+            </div>
+          {/if}
+        </div>
+
+        <div class="jwt-section">
+          <div class="jwt-section-label">Signature</div>
+          <div class="jwt-pre-wrapper">
+            <pre class="jwt-pre jwt-sig" style="font-size: {globalFontSize}rem">{jwtModal.signature || '(empty)'}</pre>
+            <button class="jwt-copy-btn" onclick={() => copyJwtSection(jwtModal.signature || '', 'sig')} title="Copy">
+              {copiedJwtSection === 'sig' ? '✓' : '⧉'}
+            </button>
+          </div>
+          <div class="jwt-verify-row">
+            {#if jwtModal.payload?.iss && ALG_MAP[jwtModal.header?.alg]}
+              <button class="jwt-verify-btn" onclick={verifyJwt} disabled={jwtVerifyStatus === 'loading'}>
+                {#if jwtVerifyStatus === 'loading'}
+                  <span class="spinner"></span> Verifying…
+                {:else}
+                  🔐 Verify Signature
+                {/if}
+              </button>
+            {:else if !jwtModal.payload?.iss}
+              <span class="jwt-verify-note">No "iss" claim — cannot auto-fetch JWKS</span>
+            {:else}
+              <span class="jwt-verify-note">Algorithm "{jwtModal.header?.alg}" not supported for browser verification</span>
+            {/if}
+            {#if jwtVerifyStatus === 'valid'}
+              <span class="jwt-verify-result valid">✓ Signature Valid</span>
+            {:else if jwtVerifyStatus === 'invalid'}
+              <span class="jwt-verify-result invalid">✕ Signature Invalid</span>
+            {:else if jwtVerifyStatus?.startsWith('error:')}
+              <span class="jwt-verify-result error">{jwtVerifyStatus.slice(6)}</span>
+            {/if}
+          </div>
         </div>
       </div>
     </div>
-  </main>
+  {/if}
 </div>
 
 <style>
@@ -1176,6 +1717,8 @@
     height: 100vh;
     width: 100%;
     overflow: hidden;
+    box-sizing: border-box;
+    border: 1px solid #32324a;
   }
 
   .app-layout.resizing {
@@ -1236,32 +1779,29 @@
   .main-content {
     max-width: 900px;
     margin: 0 auto;
-    padding: 1.5rem 2rem 2rem;
+    padding: 0.75rem 1rem 1rem;
   }
 
   /* Header */
   .app-header {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.6rem;
   }
 
   .app-header-row {
     display: flex;
-    align-items: flex-start;
-    gap: 1rem;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: hidden;
   }
 
   .app-header h1 {
-    font-size: 1.5rem;
+    font-size: 1.125rem;
     margin: 0 0 0.15rem 0;
     font-weight: 700;
     letter-spacing: -0.02em;
+    white-space: nowrap;
   }
 
-  .subtitle {
-    margin: 0;
-    color: #888;
-    font-size: 0.85rem;
-  }
 
   .history-toggle {
     background: #2e2e4d;
@@ -1285,6 +1825,43 @@
     color: #fff;
   }
 
+  .top-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .global-font-controls {
+    display: flex;
+    gap: 0.2rem;
+  }
+
+  .global-font-btn {
+    background: #2e2e4d;
+    border: 1px solid #3a3a4a;
+    color: #aaa;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.3rem 0.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1;
+  }
+
+  .global-font-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #fff;
+  }
+
+  .global-font-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
   .theme-toggle {
     background: #2e2e4d;
     border: 1px solid #3a3a4a;
@@ -1299,8 +1876,6 @@
     gap: 0.3rem;
     transition: all 0.2s;
     white-space: nowrap;
-    margin-left: auto;
-    margin-top: 0.15rem;
   }
 
   .theme-toggle:hover {
@@ -1396,6 +1971,9 @@
     align-items: center;
     gap: 0.5rem;
     white-space: nowrap;
+    min-width: 90px;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
   }
 
   .send-btn:hover:not(:disabled) {
@@ -1405,14 +1983,6 @@
   .send-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .request-options-bar {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
-    margin-top: -0.5rem;
   }
 
   .toggle-label {
@@ -1471,40 +2041,6 @@
     font-weight: 500;
   }
 
-  .toggle-hint {
-    font-size: 0.7rem;
-    color: #666;
-    cursor: help;
-    position: relative;
-  }
-
-  .toggle-hint::after {
-    content: attr(data-tip);
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: #383858;
-    color: #ccc;
-    font-size: 0.7rem;
-    font-weight: 400;
-    line-height: 1.4;
-    padding: 0.45rem 0.65rem;
-    border-radius: 6px;
-    border: 1px solid #4a4a5a;
-    white-space: normal;
-    width: max-content;
-    max-width: 260px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 100;
-  }
-
-  .toggle-hint:hover::after {
-    opacity: 1;
-  }
-
   .spinner {
     display: inline-block;
     width: 14px;
@@ -1521,7 +2057,7 @@
 
   /* Sections */
   .section {
-    margin-bottom: 1.25rem;
+    margin-bottom: 0.6rem;
   }
 
   .section-header {
@@ -1577,7 +2113,7 @@
 
   .header-row {
     display: flex;
-    gap: 0.4rem;
+    gap: 0.15rem;
     align-items: center;
   }
 
@@ -1598,13 +2134,38 @@
   }
 
   .key-input {
-    flex: 2;
+    flex: none;
     min-width: 0;
   }
 
+  .key-col-resize {
+    width: 4px;
+    align-self: stretch;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .key-col-resize:hover {
+    background: #646cff;
+  }
+
   .value-input {
-    flex: 3;
+    flex: 1;
     min-width: 0;
+  }
+
+  .value-input.secret {
+    -webkit-text-security: disc;
+    text-security: disc;
+  }
+
+  .value-input.secret:focus,
+  .value-input.secret:hover {
+    -webkit-text-security: none;
+    text-security: none;
   }
 
   .remove-btn {
@@ -1711,7 +2272,6 @@
     gap: 0.35rem;
     cursor: pointer;
     user-select: none;
-    margin-left: auto;
   }
 
   .assist-label {
@@ -1719,6 +2279,14 @@
     color: #888;
     font-weight: 500;
   }
+
+  .body-right-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-left: auto;
+  }
+
 
   .toggle-switch.small .toggle-track {
     width: 26px;
@@ -1738,7 +2306,19 @@
   }
 
   .add-field-btn {
+    margin-top: 0;
+  }
+
+  .form-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin-top: 0.4rem;
+  }
+
+  .file-clear-btn {
+    margin-top: 0.4rem;
+    align-self: flex-start;
   }
 
   .file-upload-section {
@@ -1935,6 +2515,16 @@
     color: #f93e3e;
   }
 
+  .light-theme .status-ok {
+    background: rgba(30, 140, 80, 0.15);
+    color: #1a7a45;
+  }
+
+  .light-theme .status-err {
+    background: rgba(200, 30, 30, 0.15);
+    color: #b91c1c;
+  }
+
   .response-status-group {
     display: flex;
     align-items: center;
@@ -2034,6 +2624,42 @@
     resize: vertical;
   }
 
+  .collapsible {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .collapse-arrow {
+    font-size: 1.5rem;
+    display: inline-block;
+    width: 1.2rem;
+    line-height: 1;
+    vertical-align: middle;
+  }
+
+  .section-title.collapsed {
+    opacity: 0.5;
+  }
+
+  .curl-import-btn {
+    background: transparent;
+    border: 1px solid #3a3a4a;
+    color: #aaa;
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.15rem 0.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  .curl-import-btn:hover {
+    border-color: #646cff;
+    color: #fff;
+  }
+
   .curl-output {
     background: #2e2e4d;
     border: 1px solid #3a3a4a;
@@ -2053,11 +2679,15 @@
 
   /* Hint */
   .hint {
-    text-align: center;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: #9090a8;
-    margin-top: 1.5rem;
-    padding-bottom: 1rem;
+  }
+
+  .inline-hint {
+    margin: 0;
+    padding: 0;
+    margin-right: 0.4rem;
+    white-space: nowrap;
   }
 
   kbd {
@@ -2072,7 +2702,7 @@
 
   /* Light mode overrides */
   .light-theme .request-bar {
-    background: #e2e2ee;
+    background: #ececf4;
     border-color: #a0a0b4;
   }
 
@@ -2091,16 +2721,32 @@
   }
 
   .light-theme .header-input,
-  .light-theme .body-input,
-  .light-theme .response-body {
-    background: #e2e2ee;
+  .light-theme .body-input {
+    background: #ececf4;
     border-color: #a0a0b4;
+    color: #1a1a2a;
+  }
+
+  .light-theme .response-body {
+    background: #e8e8f2;
+    border-color: #a0a0b4;
+    color: #111;
+  }
+
+  .light-theme .curl-import-btn {
+    border-color: #a0a0b4;
+    color: #444;
+  }
+
+  .light-theme .curl-import-btn:hover {
+    border-color: #646cff;
+    color: #111;
   }
 
   .light-theme .curl-output {
-    background: #e2e2ee;
+    background: #e8e8f2;
     border-color: #a0a0b4;
-    color: #2a2a3a;
+    color: #111;
   }
 
   .light-theme .response-copy-btn {
@@ -2142,16 +2788,6 @@
 
   .light-theme .toggle-text {
     color: #333;
-  }
-
-  .light-theme .toggle-hint {
-    color: #444;
-  }
-
-  .light-theme .toggle-hint::after {
-    background: #e2e2ee;
-    color: #2a2a3a;
-    border-color: #a0a0b4;
   }
 
   .light-theme .file-dropzone {
@@ -2199,8 +2835,8 @@
   }
 
   .light-theme .debug-body {
-    background: #e2e2ee;
-    color: #2a2a3a;
+    background: #e8e8f2;
+    color: #111;
   }
 
   .light-theme kbd {
@@ -2220,6 +2856,18 @@
     background: #ccccda;
   }
 
+  .light-theme .global-font-btn {
+    background: #dadaea;
+    border-color: #a0a0b4;
+    color: #333;
+  }
+
+  .light-theme .global-font-btn:hover:not(:disabled) {
+    border-color: #646cff;
+    color: #111;
+    background: #ccccda;
+  }
+
   .light-theme .theme-toggle {
     background: #dadaea;
     border-color: #a0a0b4;
@@ -2231,10 +2879,15 @@
     background: #ccccda;
   }
 
+  .app-layout.light-theme {
+    border-color: #a0a0b4;
+  }
+
   .light-theme .resize-handle:hover,
   .light-theme.resizing .resize-handle {
     background: rgba(100, 108, 255, 0.12);
   }
+
 
   .light-theme .resize-grip {
     background: #999;
@@ -2250,5 +2903,352 @@
 
   .light-theme .badge {
     color: #333;
+  }
+
+  /* JWT */
+  .value-input-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+  }
+
+  .value-input-wrap .value-input {
+    flex: 1;
+    width: 100%;
+  }
+
+  .value-input.has-jwt-btn {
+    padding-right: 4.2rem;
+  }
+
+  .jwt-badge {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #646cff;
+    color: #fff;
+    border: none;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: background 0.15s;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .jwt-badge:hover {
+    background: #535bf2;
+  }
+
+  .jwt-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .jwt-modal {
+    background: #1e1e38;
+    border: 1px solid #3a3a5a;
+    border-radius: 12px;
+    padding: 1.25rem;
+    width: 85vw;
+    max-width: 900px;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  .jwt-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
+
+  .jwt-modal-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #ddd;
+  }
+
+  .jwt-size-badge {
+    font-size: 0.62rem;
+    font-weight: 500;
+    color: #888;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid #3a3a5a;
+    border-radius: 5px;
+  }
+
+  .jwt-expiry-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .jwt-expiry-badge.valid {
+    background: rgba(73, 204, 144, 0.15);
+    color: #49cc90;
+  }
+
+  .jwt-expiry-badge.expired {
+    background: rgba(249, 62, 62, 0.15);
+    color: #f93e3e;
+  }
+
+  .jwt-close-btn {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid #3a3a5a;
+    color: #888;
+    font-size: 0.85rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .jwt-close-btn:hover {
+    border-color: #f93e3e;
+    color: #f93e3e;
+  }
+
+  .jwt-section {
+    margin-bottom: 0.8rem;
+  }
+
+  .jwt-pre-wrapper {
+    position: relative;
+  }
+
+  .jwt-pre-wrapper .jwt-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #3a3a5a;
+    border: 1px solid #4a4a6a;
+    color: #aaa;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s;
+    line-height: 1;
+  }
+
+  .jwt-pre-wrapper:hover .jwt-copy-btn {
+    opacity: 1;
+  }
+
+  .jwt-pre-wrapper .jwt-copy-btn:hover {
+    background: #4a4a6a;
+    color: #fff;
+  }
+
+  .jwt-section-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 0.3rem;
+    letter-spacing: 0.04em;
+  }
+
+  .jwt-alg {
+    font-weight: 500;
+    color: #646cff;
+    text-transform: none;
+  }
+
+  .jwt-pre {
+    background: #2a2a4a;
+    border: 1px solid #3a3a5a;
+    border-radius: 8px;
+    padding: 0.7rem;
+    margin: 0;
+    font-size: 0.72rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    overflow-x: auto;
+    color: #ccc;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .jwt-timestamps {
+    font-size: 0.65rem;
+    color: #999;
+    margin-top: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .jwt-sig {
+    color: #888;
+    font-size: 0.65rem;
+  }
+
+  .jwt-verify-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .jwt-verify-btn {
+    background: #646cff;
+    color: #fff;
+    border: none;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.35rem 0.7rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .jwt-verify-btn:hover:not(:disabled) {
+    background: #535bf2;
+  }
+
+  .jwt-verify-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .jwt-verify-note {
+    font-size: 0.6rem;
+    color: #666;
+    font-style: italic;
+  }
+
+  .jwt-verify-result {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .jwt-verify-result.valid {
+    background: rgba(73, 204, 144, 0.15);
+    color: #49cc90;
+  }
+
+  .jwt-verify-result.invalid {
+    background: rgba(249, 62, 62, 0.15);
+    color: #f93e3e;
+  }
+
+  .jwt-verify-result.error {
+    background: rgba(255, 180, 50, 0.15);
+    color: #e0a030;
+    font-weight: 500;
+    font-size: 0.6rem;
+  }
+
+  /* JWT light mode */
+  .light-theme .jwt-modal {
+    background: #f0f0f8;
+    border-color: #a0a0b4;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  }
+
+  .light-theme .jwt-modal-title {
+    color: #222;
+  }
+
+  .light-theme .jwt-size-badge {
+    color: #555;
+    border-color: #a0a0b4;
+  }
+
+  .light-theme .jwt-close-btn {
+    border-color: #a0a0b4;
+    color: #666;
+  }
+
+  .light-theme .jwt-close-btn:hover {
+    border-color: #f93e3e;
+    color: #f93e3e;
+  }
+
+  .light-theme .jwt-section-label {
+    color: #555;
+  }
+
+  .light-theme .jwt-pre {
+    background: #e2e2ee;
+    border-color: #a0a0b4;
+    color: #222;
+  }
+
+  .light-theme .jwt-copy-btn {
+    background: #ccccd8;
+    border-color: #a0a0b4;
+    color: #444;
+  }
+
+  .light-theme .jwt-copy-btn:hover {
+    background: #b8b8c8;
+    color: #111;
+  }
+
+  .light-theme .jwt-timestamps {
+    color: #555;
+  }
+
+  .light-theme .jwt-sig {
+    color: #666;
+  }
+
+  .light-theme .jwt-verify-note {
+    color: #888;
+  }
+
+  .light-theme .jwt-verify-result.valid {
+    background: rgba(30, 140, 80, 0.15);
+    color: #1a7a45;
+  }
+
+  .light-theme .jwt-verify-result.invalid {
+    background: rgba(200, 30, 30, 0.15);
+    color: #b91c1c;
+  }
+
+  .light-theme .jwt-verify-result.error {
+    background: rgba(200, 140, 20, 0.15);
+    color: #9a6c10;
+  }
+
+  .light-theme .jwt-expiry-badge.valid {
+    background: rgba(30, 140, 80, 0.15);
+    color: #1a7a45;
+  }
+
+  .light-theme .jwt-expiry-badge.expired {
+    background: rgba(200, 30, 30, 0.15);
+    color: #b91c1c;
   }
 </style>
