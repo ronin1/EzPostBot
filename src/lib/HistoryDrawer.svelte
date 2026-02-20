@@ -4,13 +4,20 @@
   let { open = $bindable(false), onReplay = () => {}, darkMode = true, globalFontSize = 0.72 } = $props();
 
   // Filters
-  let filterMethods = $state([]);
-  let filterUrl = $state('');
-  let filterStatusMin = $state('');
-  let filterStatusMax = $state('');
-  let filterServerSide = $state('');
-  let sortBy = $state('timestamp');
-  let sortDir = $state('DESC');
+  let filterMethods = $state(JSON.parse(localStorage.getItem('filterMethods') || '[]'));
+  let filterUrl = $state(localStorage.getItem('filterUrl') || '');
+  let filterStatusMin = $state(localStorage.getItem('filterStatusMin') || '');
+  let filterStatusMax = $state(localStorage.getItem('filterStatusMax') || '');
+  let filterServerSide = $state(localStorage.getItem('filterServerSide') || '');
+  let sortBy = $state(localStorage.getItem('sortBy') || 'timestamp');
+  let sortDir = $state(localStorage.getItem('sortDir') || 'DESC');
+  $effect(() => { localStorage.setItem('filterMethods', JSON.stringify(filterMethods)); });
+  $effect(() => { localStorage.setItem('filterUrl', filterUrl); });
+  $effect(() => { localStorage.setItem('filterStatusMin', filterStatusMin); });
+  $effect(() => { localStorage.setItem('filterStatusMax', filterStatusMax); });
+  $effect(() => { localStorage.setItem('filterServerSide', filterServerSide); });
+  $effect(() => { localStorage.setItem('sortBy', sortBy); });
+  $effect(() => { localStorage.setItem('sortDir', sortDir); });
 
   // Pagination
   let page = $state(1);
@@ -101,6 +108,17 @@
       expandedId = null;
       await refresh();
     }
+  }
+
+  async function handleClearVisible() {
+    if (rows.length === 0) return;
+    if (!confirm(`Delete ${rows.length} visible item${rows.length > 1 ? 's' : ''}?`)) return;
+    for (const row of rows) {
+      await deleteRequest(row.id);
+    }
+    expandedId = null;
+    page = 1;
+    await refresh();
   }
 
   function toggleExpand(id) {
@@ -418,9 +436,14 @@
       <span class="page-info">{page}/{totalPages} ({total})</span>
       <button class="page-btn" disabled={page >= totalPages} onclick={() => page++}>&raquo;</button>
     </div>
-    <button class="clear-all-btn" onclick={handleClearAll} disabled={total === 0}>
-      Clear All
-    </button>
+    <span class="clear-btns">
+      <button class="clear-all-btn" onclick={handleClearVisible} disabled={rows.length === 0}>
+        Clear Visible
+      </button>
+      <button class="clear-all-btn" onclick={handleClearAll} disabled={total === 0}>
+        Clear All
+      </button>
+    </span>
   </div>
 </div>
 
@@ -988,6 +1011,12 @@
   .page-info {
     font-size: 0.68rem;
     color: #aaa;
+  }
+
+  .clear-btns {
+    display: flex;
+    gap: 0.4rem;
+    margin-left: auto;
   }
 
   .clear-all-btn {
