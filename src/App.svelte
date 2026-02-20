@@ -165,6 +165,126 @@
     } catch {}
   }
 
+  function parseCurl(input) {
+    const text = input.trim().replace(/\\\n\s*/g, ' ');
+    if (!/^curl\s/i.test(text)) return null;
+
+    const tokens = [];
+    let i = 4; // skip "curl"
+    while (i < text.length) {
+      while (i < text.length && text[i] === ' ') i++;
+      if (i >= text.length) break;
+      let token = '';
+      if (text[i] === "'" || text[i] === '"') {
+        const q = text[i++];
+        while (i < text.length && text[i] !== q) {
+          if (text[i] === '\\' && q === '"') { i++; token += text[i] || ''; }
+          else token += text[i];
+          i++;
+        }
+        i++; // skip closing quote
+      } else {
+        while (i < text.length && text[i] !== ' ') { token += text[i]; i++; }
+      }
+      tokens.push(token);
+    }
+
+    let parsedMethod = null;
+    let parsedUrl = '';
+    const parsedHeaders = [];
+    let parsedData = null;
+    let isFormUrlEncoded = false;
+    let isFormMultipart = false;
+    const formParts = [];
+
+    for (let t = 0; t < tokens.length; t++) {
+      const tok = tokens[t];
+      if (tok === '-X' || tok === '--request') { parsedMethod = tokens[++t]?.toUpperCase(); }
+      else if (tok === '-H' || tok === '--header') { parsedHeaders.push(tokens[++t]); }
+      else if (tok === '-d' || tok === '--data' || tok === '--data-raw' || tok === '--data-binary') { parsedData = tokens[++t]; }
+      else if (tok === '--data-urlencode') { isFormUrlEncoded = true; formParts.push(tokens[++t]); }
+      else if (tok === '-F' || tok === '--form') { isFormMultipart = true; formParts.push(tokens[++t]); }
+      else if (!tok.startsWith('-') && !parsedUrl) { parsedUrl = tok; }
+    }
+
+    if (!parsedMethod) {
+      parsedMethod = (parsedData || isFormUrlEncoded || isFormMultipart) ? 'POST' : 'GET';
+    }
+
+    return { method: parsedMethod, url: parsedUrl, headers: parsedHeaders, data: parsedData, isFormUrlEncoded, isFormMultipart, formParts };
+  }
+
+  let importStatus = $state(null);
+  async function importCurl() {
+    try {
+      const clip = await navigator.clipboard.readText();
+      const parsed = parseCurl(clip);
+      if (!parsed) {
+        importStatus = 'invalid';
+        setTimeout(() => { if (importStatus === 'invalid') importStatus = null; }, 2000);
+        return;
+      }
+
+      method = parsed.method;
+      try {
+        const u = new URL(parsed.url);
+        u.search = '';
+        url = u.toString();
+        queryParams = [];
+        for (const [k, v] of new URL(parsed.url).searchParams.entries()) {
+          queryParams = [...queryParams, { key: k, value: v }];
+        }
+      } catch {
+        url = parsed.url;
+        queryParams = [];
+      }
+
+      headers = [];
+      let detectedCt = '';
+      for (const h of parsed.headers) {
+        const idx = h.indexOf(':');
+        if (idx < 0) continue;
+        const key = h.slice(0, idx).trim();
+        const val = h.slice(idx + 1).trim();
+        if (key.toLowerCase() === 'content-type') { detectedCt = val; continue; }
+        headers = [...headers, { key, value: val }];
+      }
+
+      formFields = [];
+      selectedFiles = [];
+      body = '';
+
+      if (parsed.isFormMultipart) {
+        bodyType = 'form';
+        formFields = parsed.formParts.filter(p => !p.includes('=@')).map(p => {
+          const idx = p.indexOf('=');
+          return { key: p.slice(0, idx), value: p.slice(idx + 1) };
+        });
+      } else if (parsed.isFormUrlEncoded || detectedCt.includes('application/x-www-form-urlencoded')) {
+        bodyType = 'form';
+        const src = parsed.isFormUrlEncoded ? parsed.formParts.join('&') : (parsed.data || '');
+        formFields = src.split('&').filter(Boolean).map(pair => {
+          const idx = pair.indexOf('=');
+          return idx >= 0
+            ? { key: decodeURIComponent(pair.slice(0, idx)), value: decodeURIComponent(pair.slice(idx + 1)) }
+            : { key: decodeURIComponent(pair), value: '' };
+        });
+      } else if (parsed.data) {
+        bodyType = 'json';
+        body = parsed.data;
+      } else {
+        bodyType = 'json';
+        body = '';
+      }
+
+      importStatus = 'ok';
+      setTimeout(() => { if (importStatus === 'ok') importStatus = null; }, 1500);
+    } catch {
+      importStatus = 'error';
+      setTimeout(() => { if (importStatus === 'error') importStatus = null; }, 2000);
+    }
+  }
+
   let drawerOpen = $state(localStorage.getItem('drawerOpen') === 'true');
   $effect(() => { localStorage.setItem('drawerOpen', String(drawerOpen)); });
   let drawerRef = $state(null);
@@ -306,6 +426,12 @@
 
     return parts.join(' \\\n  ');
   });
+
+  const curlCommandMasked = $derived(
+    curlCommand.replace(/(-H\s+(['"]))(Authorization:\s*)(.*?)(\2)/gi, '$1$3••••••••$5')
+  );
+
+  let curlHovered = $state(false);
 
   let themeMode = $state(localStorage.getItem('theme') || 'auto');
 
@@ -865,6 +991,13 @@
             </button>
             <h1><span style="font-size: 1.75rem; vertical-align: -0.15em">👾</span> EzPostBot</h1>
             <span class="top-controls">
+              <label class="toggle-label top-toggle" title="Send request from the backend server, bypassing CORS preflight and browser restrictions">
+                <span class="toggle-switch" class:active={serverSide}>
+                  <input type="checkbox" bind:checked={serverSide} />
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
+                <span class="toggle-text">Server-side</span>
+              </label>
               <span class="global-font-controls">
                 <button class="global-font-btn" disabled={globalFontSize <= FONT_MIN} onclick={() => { globalFontSize = +(globalFontSize - FONT_STEP).toFixed(2); }} title="Decrease text size">A−</button>
                 <button class="global-font-btn" disabled={Math.abs(globalFontSize - FONT_DEFAULT) < 0.01} onclick={() => { globalFontSize = FONT_DEFAULT; }} title="Reset text size">A</button>
@@ -905,17 +1038,6 @@
           </button>
         </div>
 
-        <div class="request-options-bar">
-          <label class="toggle-label">
-            <span class="toggle-switch" class:active={serverSide}>
-              <input type="checkbox" bind:checked={serverSide} />
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </span>
-            <span class="toggle-text">Server-side</span>
-            <span class="toggle-hint" data-tip="Send request from the backend server, bypassing CORS preflight and browser restrictions">ⓘ</span>
-          </label>
-        </div>
-
         <!-- Headers Section -->
         <div class="section">
           <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -946,6 +1068,7 @@
                     bind:value={header.value}
                     placeholder="Value"
                     class="header-input value-input"
+                    class:secret={header.key.trim().toLowerCase() === 'authorization'}
                   />
                   <button class="remove-btn" onclick={() => removeHeader(i)} title="Remove header">
                     &times;
@@ -1252,10 +1375,14 @@
             <span class="section-title" class:collapsed={!showCurl}>
               <span class="collapse-arrow">{showCurl ? '▾' : '▸'}</span> cURL Command
             </span>
+            <button class="curl-import-btn" onclick={(e) => { e.stopPropagation(); importCurl(); }} title="Import cURL command from clipboard">
+              {#if importStatus === 'ok'}✓ Imported{:else if importStatus === 'invalid'}✕ Not a curl command{:else if importStatus === 'error'}✕ Clipboard error{:else}📋 Import Paste Buffer{/if}
+            </button>
           </div>
           {#if showCurl}
-            <div class="response-pre-wrapper">
-              <pre class="curl-output" style="font-size: {globalFontSize}rem">{curlCommand}</pre>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="response-pre-wrapper" onmouseenter={() => curlHovered = true} onmouseleave={() => curlHovered = false}>
+              <pre class="curl-output" style="font-size: {globalFontSize}rem">{curlHovered ? curlCommand : curlCommandMasked}</pre>
               <button class="response-copy-btn" onclick={() => copyPanelText(curlCommand, 'curl')} title="Copy cURL command">
                 {copiedPanel === 'curl' ? '✓' : '⧉'}
               </button>
@@ -1541,14 +1668,6 @@
     cursor: not-allowed;
   }
 
-  .request-options-bar {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
-    margin-top: -0.5rem;
-  }
-
   .toggle-label {
     display: flex;
     align-items: center;
@@ -1603,40 +1722,6 @@
     font-size: 0.75rem;
     color: #888;
     font-weight: 500;
-  }
-
-  .toggle-hint {
-    font-size: 0.7rem;
-    color: #666;
-    cursor: help;
-    position: relative;
-  }
-
-  .toggle-hint::after {
-    content: attr(data-tip);
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: #383858;
-    color: #ccc;
-    font-size: 0.7rem;
-    font-weight: 400;
-    line-height: 1.4;
-    padding: 0.45rem 0.65rem;
-    border-radius: 6px;
-    border: 1px solid #4a4a5a;
-    white-space: normal;
-    width: max-content;
-    max-width: 260px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 100;
-  }
-
-  .toggle-hint:hover::after {
-    opacity: 1;
   }
 
   .spinner {
@@ -1739,6 +1824,17 @@
   .value-input {
     flex: 3;
     min-width: 0;
+  }
+
+  .value-input.secret {
+    -webkit-text-security: disc;
+    text-security: disc;
+  }
+
+  .value-input.secret:focus,
+  .value-input.secret:hover {
+    -webkit-text-security: none;
+    text-security: none;
   }
 
   .remove-btn {
@@ -2214,6 +2310,25 @@
     opacity: 0.5;
   }
 
+  .curl-import-btn {
+    background: transparent;
+    border: 1px solid #3a3a4a;
+    color: #aaa;
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.15rem 0.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  .curl-import-btn:hover {
+    border-color: #646cff;
+    color: #fff;
+  }
+
   .curl-output {
     background: #2e2e4d;
     border: 1px solid #3a3a4a;
@@ -2287,6 +2402,16 @@
     color: #111;
   }
 
+  .light-theme .curl-import-btn {
+    border-color: #a0a0b4;
+    color: #444;
+  }
+
+  .light-theme .curl-import-btn:hover {
+    border-color: #646cff;
+    color: #111;
+  }
+
   .light-theme .curl-output {
     background: #e8e8f2;
     border-color: #a0a0b4;
@@ -2332,16 +2457,6 @@
 
   .light-theme .toggle-text {
     color: #333;
-  }
-
-  .light-theme .toggle-hint {
-    color: #444;
-  }
-
-  .light-theme .toggle-hint::after {
-    background: #e2e2ee;
-    color: #2a2a3a;
-    border-color: #a0a0b4;
   }
 
   .light-theme .file-dropzone {

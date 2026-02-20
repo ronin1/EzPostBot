@@ -154,6 +154,12 @@
     return u || '';
   }
 
+  function maskAuth(text) {
+    return text.replace(/^(Authorization:\s*).+$/gim, '$1••••••••');
+  }
+
+  let hoveredPreId = $state(null);
+
   function buildStoredRequestText(row) {
     const lines = [];
     lines.push(`${row.method || 'GET'} ${row.url || ''}`);
@@ -377,11 +383,12 @@
               </div>
             {:else if getItemTab(row.id) === 'request'}
               <div class="detail-section">
-                <div class="pre-wrapper">
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div class="pre-wrapper" onmouseenter={() => hoveredPreId = `req-${row.id}`} onmouseleave={() => hoveredPreId = null}>
                   <button class="copy-btn" onclick={() => copyText(buildStoredRequestText(row), `req-${row.id}`)} title="Copy">
                     {copiedId === `req-${row.id}` ? '✓' : '⧉'}
                   </button>
-                  <pre class="detail-pre" style="font-size: {globalFontSize}rem">{buildStoredRequestText(row)}</pre>
+                  <pre class="detail-pre" style="font-size: {globalFontSize}rem">{hoveredPreId === `req-${row.id}` ? buildStoredRequestText(row) : maskAuth(buildStoredRequestText(row))}</pre>
                 </div>
               </div>
             {:else if getItemTab(row.id) === 'preflight'}
