@@ -134,6 +134,23 @@ app.get('/api/history', (req, res) => {
     conditions.push('(server_side = 0 OR server_side IS NULL)');
   }
 
+  const { bodyText, bodyScope = 'both', bodyField = 'both' } = req.query;
+  if (bodyText) {
+    const cols = [];
+    const isReq = bodyScope === 'request' || bodyScope === 'both';
+    const isRes = bodyScope === 'response' || bodyScope === 'both';
+    const isHeader = bodyField === 'header' || bodyField === 'both';
+    const isBody = bodyField === 'body' || bodyField === 'both';
+    if (isReq && isHeader) cols.push('request_headers');
+    if (isReq && isBody) cols.push('request_body');
+    if (isRes && isHeader) cols.push('response_headers');
+    if (isRes && isBody) cols.push('response_body');
+    if (cols.length > 0) {
+      conditions.push(`(${cols.map(c => `${c} LIKE ?`).join(' OR ')})`);
+      for (const _ of cols) params.push(`%${bodyText}%`);
+    }
+  }
+
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const allowedSortCols = { timestamp: 'timestamp', url: 'url', method: 'method' };
   const col = allowedSortCols[sortBy] || 'timestamp';

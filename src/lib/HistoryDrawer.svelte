@@ -11,6 +11,9 @@
   let filterServerSide = $state(localStorage.getItem('filterServerSide') || '');
   let sortBy = $state(localStorage.getItem('sortBy') || 'timestamp');
   let sortDir = $state(localStorage.getItem('sortDir') || 'DESC');
+  let filterBodyText = $state(localStorage.getItem('filterBodyText') || '');
+  let filterBodyScope = $state(localStorage.getItem('filterBodyScope') || 'both'); // 'request' | 'response' | 'both'
+  let filterBodyField = $state(localStorage.getItem('filterBodyField') || 'both'); // 'header' | 'body' | 'both'
   $effect(() => { localStorage.setItem('filterMethods', JSON.stringify(filterMethods)); });
   $effect(() => { localStorage.setItem('filterUrl', filterUrl); });
   $effect(() => { localStorage.setItem('filterStatusMin', filterStatusMin); });
@@ -18,6 +21,9 @@
   $effect(() => { localStorage.setItem('filterServerSide', filterServerSide); });
   $effect(() => { localStorage.setItem('sortBy', sortBy); });
   $effect(() => { localStorage.setItem('sortDir', sortDir); });
+  $effect(() => { localStorage.setItem('filterBodyText', filterBodyText); });
+  $effect(() => { localStorage.setItem('filterBodyScope', filterBodyScope); });
+  $effect(() => { localStorage.setItem('filterBodyField', filterBodyField); });
 
   // Pagination
   let page = $state(1);
@@ -73,7 +79,7 @@
   });
 
   $effect(() => {
-    filterMethods; filterUrl; filterStatusMin; filterStatusMax; filterServerSide; page; pageSize; sortBy; sortDir; open;
+    filterMethods; filterUrl; filterStatusMin; filterStatusMax; filterServerSide; filterBodyText; filterBodyScope; filterBodyField; page; pageSize; sortBy; sortDir; open;
     refresh();
   });
 
@@ -84,6 +90,9 @@
       statusMin: filterStatusMin || undefined,
       statusMax: filterStatusMax || undefined,
       serverSideFilter: filterServerSide || undefined,
+      bodyText: filterBodyText || undefined,
+      bodyScope: filterBodyText ? filterBodyScope : undefined,
+      bodyField: filterBodyText ? filterBodyField : undefined,
       page,
       pageSize,
       sortBy,
@@ -131,6 +140,9 @@
     filterStatusMin = '';
     filterStatusMax = '';
     filterServerSide = '';
+    filterBodyText = '';
+    filterBodyScope = 'both';
+    filterBodyField = 'both';
     page = 1;
     sortBy = 'timestamp';
     sortDir = 'DESC';
@@ -273,6 +285,29 @@
         placeholder="Filter URL..."
         class="filter-input"
       />
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Content Search</span>
+      <input
+        type="text"
+        bind:value={filterBodyText}
+        placeholder="Search headers/body..."
+        class="filter-input"
+      />
+      {#if filterBodyText}
+        <div class="body-search-toggles">
+          <div class="toggle-group">
+            <button class="search-chip" class:selected={filterBodyScope === 'both'} onclick={() => filterBodyScope = 'both'}>Both</button>
+            <button class="search-chip" class:selected={filterBodyScope === 'request'} onclick={() => filterBodyScope = 'request'}>Request</button>
+            <button class="search-chip" class:selected={filterBodyScope === 'response'} onclick={() => filterBodyScope = 'response'}>Response</button>
+          </div>
+          <div class="toggle-group">
+            <button class="search-chip" class:selected={filterBodyField === 'both'} onclick={() => filterBodyField = 'both'}>Both</button>
+            <button class="search-chip" class:selected={filterBodyField === 'header'} onclick={() => filterBodyField = 'header'}>Headers</button>
+            <button class="search-chip" class:selected={filterBodyField === 'body'} onclick={() => filterBodyField = 'body'}>Body</button>
+          </div>
+        </div>
+      {/if}
     </div>
     <div class="filter-group mode-row">
       <div class="mode-left">
@@ -559,6 +594,44 @@
   }
 
   .mode-chip.selected {
+    opacity: 1;
+    background: rgba(100, 108, 255, 0.15);
+    border-color: #646cff;
+    color: #aac0ff;
+  }
+
+  .body-search-toggles {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.1rem;
+  }
+
+  .toggle-group {
+    display: flex;
+    gap: 0.2rem;
+  }
+
+  .search-chip {
+    background: transparent;
+    border: 1px solid #3a3a4a;
+    color: #aaa;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.6rem;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    opacity: 0.75;
+  }
+
+  .search-chip:hover {
+    opacity: 0.8;
+    border-color: #646cff;
+  }
+
+  .search-chip.selected {
     opacity: 1;
     background: rgba(100, 108, 255, 0.15);
     border-color: #646cff;
@@ -1091,6 +1164,18 @@
   }
 
   .light-theme .mode-chip.selected {
+    background: rgba(100, 108, 255, 0.12);
+    border-color: #646cff;
+    color: #333;
+  }
+
+  .light-theme .search-chip {
+    border-color: #a0a0b4;
+    color: #444;
+    opacity: 0.8;
+  }
+
+  .light-theme .search-chip.selected {
     background: rgba(100, 108, 255, 0.12);
     border-color: #646cff;
     color: #333;
