@@ -518,6 +518,7 @@
     }
 
     loading = false;
+    showResponse = true;
   }
 
   async function sendServerSide(requestUrl, opts, requestDebug, requestHeadersStr, requestBodyStr) {
@@ -821,8 +822,14 @@
       selectedFiles = [];
     }
     serverSide = !!row.server_side;
-    // Remove content-type from restored headers to avoid duplicate when re-sending
     headers = headers.filter(h => h.key.toLowerCase() !== 'content-type');
+
+    showResponse = false;
+    errorDebug = null;
+    response = null;
+    responseStatus = null;
+    responseHeaders = '';
+    responseDuration = null;
   }
 </script>
 
