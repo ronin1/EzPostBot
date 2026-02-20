@@ -285,9 +285,227 @@
     }
   }
 
+  const JWT_RE = /^Bearer\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)$/i;
+
+  function isJwt(value) {
+    return JWT_RE.test(value.trim());
+  }
+
+  function decodeJwt(value) {
+    const m = value.trim().match(JWT_RE);
+    if (!m) return null;
+    const parts = m[1].split('.');
+    const b64decode = (s) => {
+      const padded = s.replace(/-/g, '+').replace(/_/g, '/');
+      try { return JSON.parse(atob(padded)); } catch { return null; }
+    };
+    const header = b64decode(parts[0]);
+    const payload = b64decode(parts[1]);
+    const signature = parts[2] || '';
+
+    let expiry = null;
+    let isExpired = false;
+    if (payload?.exp) {
+      expiry = new Date(payload.exp * 1000);
+      isExpired = expiry < new Date();
+    }
+    let issuedAt = payload?.iat ? new Date(payload.iat * 1000) : null;
+    let notBefore = payload?.nbf ? new Date(payload.nbf * 1000) : null;
+
+    return { header, payload, signature, rawToken: m[1], expiry, isExpired, issuedAt, notBefore };
+  }
+
+  let jwtModal = $state(null);
+  let jwtVerifyStatus = $state(null);
+  let copiedJwtSection = $state(null);
+
+  async function copyJwtSection(text, id) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedJwtSection = id;
+      setTimeout(() => { if (copiedJwtSection === id) copiedJwtSection = null; }, 1500);
+    } catch {}
+  } // null | 'loading' | 'valid' | 'invalid' | 'error:message'
+
+  function openJwtModal(value) {
+    jwtModal = decodeJwt(value);
+    jwtVerifyStatus = null;
+  }
+
+  function closeJwtModal() {
+    jwtModal = null;
+    jwtVerifyStatus = null;
+  }
+
+  const ALG_MAP = {
+    RS256: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    RS384: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-384' },
+    RS512: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-512' },
+    ES256: { name: 'ECDSA', namedCurve: 'P-256', hash: 'SHA-256' },
+    ES384: { name: 'ECDSA', namedCurve: 'P-384', hash: 'SHA-384' },
+    ES512: { name: 'ECDSA', namedCurve: 'P-521', hash: 'SHA-512' },
+  };
+
+  function b64urlToUint8(s) {
+    const padded = s.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(padded);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+
+  async function fetchJwks(issuer) {
+    const base = issuer.replace(/\/+$/, '');
+    const urls = [
+      `${base}/.well-known/jwks.json`,
+      `${base}/.well-known/openid-configuration`,
+    ];
+
+    // Try direct fetch first, then server-side proxy
+    for (const jwksUrl of [urls[0]]) {
+      try {
+        let res = await fetch(jwksUrl);
+        if (!res.ok) {
+          res = await fetch(`/api/proxy`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: jwksUrl, method: 'GET', headers: {} }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.body) return JSON.parse(data.body);
+          }
+        } else {
+          return await res.json();
+        }
+      } catch { /* try next */ }
+    }
+
+    // Try OIDC discovery
+    try {
+      let res = await fetch(urls[1]);
+      if (!res.ok) {
+        res = await fetch(`/api/proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: urls[1], method: 'GET', headers: {} }),
+        });
+      }
+      const config = res.ok ? await res.json() : JSON.parse((await res.json()).body);
+      if (config.jwks_uri) {
+        let jwksRes = await fetch(config.jwks_uri);
+        if (!jwksRes.ok) {
+          jwksRes = await fetch(`/api/proxy`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: config.jwks_uri, method: 'GET', headers: {} }),
+          });
+          if (jwksRes.ok) {
+            const data = await jwksRes.json();
+            if (data.body) return JSON.parse(data.body);
+          }
+        } else {
+          return await jwksRes.json();
+        }
+      }
+    } catch { /* fall through */ }
+
+    return null;
+  }
+
+  async function importKey(jwk, alg) {
+    const algInfo = ALG_MAP[alg];
+    if (!algInfo) throw new Error(`Unsupported algorithm: ${alg}`);
+
+    const importAlg = alg.startsWith('ES')
+      ? { name: algInfo.name, namedCurve: algInfo.namedCurve }
+      : { name: algInfo.name, hash: algInfo.hash };
+
+    return crypto.subtle.importKey('jwk', jwk, importAlg, false, ['verify']);
+  }
+
+  async function verifyJwt() {
+    if (!jwtModal) return;
+    jwtVerifyStatus = 'loading';
+
+    try {
+      const { header, payload, rawToken } = jwtModal;
+      const alg = header?.alg;
+
+      if (!ALG_MAP[alg]) {
+        jwtVerifyStatus = `error:Algorithm "${alg}" not supported for browser verification`;
+        return;
+      }
+
+      const iss = payload?.iss;
+      if (!iss) {
+        jwtVerifyStatus = 'error:No "iss" claim found in token';
+        return;
+      }
+
+      const jwks = await fetchJwks(iss);
+      if (!jwks?.keys?.length) {
+        jwtVerifyStatus = 'error:Could not fetch JWKS from issuer';
+        return;
+      }
+
+      const kid = header?.kid;
+      let key = kid ? jwks.keys.find(k => k.kid === kid) : jwks.keys[0];
+      if (!key) {
+        jwtVerifyStatus = `error:No matching key found for kid "${kid}"`;
+        return;
+      }
+
+      const cryptoKey = await importKey(key, alg);
+      const parts = rawToken.split('.');
+      const signedData = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+      let sigBytes = b64urlToUint8(parts[2]);
+
+      // ECDSA signatures from JWTs are in raw r||s format already
+      const verifyAlg = alg.startsWith('ES')
+        ? { name: ALG_MAP[alg].name, hash: ALG_MAP[alg].hash }
+        : { name: ALG_MAP[alg].name };
+
+      const valid = await crypto.subtle.verify(verifyAlg, cryptoKey, sigBytes, signedData);
+      jwtVerifyStatus = valid ? 'valid' : 'invalid';
+    } catch (err) {
+      jwtVerifyStatus = `error:${err.message}`;
+    }
+  }
+
   let drawerOpen = $state(localStorage.getItem('drawerOpen') === 'true');
   $effect(() => { localStorage.setItem('drawerOpen', String(drawerOpen)); });
   let drawerRef = $state(null);
+  let headerRowEl = $state(null);
+  let keyColWidth = $state(parseInt(localStorage.getItem('keyColWidth')) || 180);
+  $effect(() => { localStorage.setItem('keyColWidth', String(keyColWidth)); });
+  let keyColDragging = $state(false);
+
+  function startKeyColResize(e) {
+    e.preventDefault();
+    keyColDragging = true;
+    const startX = e.clientX;
+    const startW = keyColWidth;
+    function onMove(ev) {
+      keyColWidth = Math.max(80, Math.min(400, startW + ev.clientX - startX));
+    }
+    function onUp() {
+      keyColDragging = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+  let showTitle = $state(true);
+  $effect(() => {
+    if (!headerRowEl) return;
+    const ro = new ResizeObserver(([entry]) => {
+      showTitle = entry.contentRect.width > 420;
+    });
+    ro.observe(headerRowEl);
+    return () => ro.disconnect();
+  });
 
   const MIN_DRAWER = 260;
   const DEFAULT_DRAWER_RATIO = 0.42;
@@ -301,12 +519,12 @@
   }
 
   // Resize state
-  let drawerWidth = $state(getDefaultDrawerWidth());
+  let drawerWidth = $state(parseInt(localStorage.getItem('drawerWidth')) || getDefaultDrawerWidth());
+  $effect(() => { localStorage.setItem('drawerWidth', String(drawerWidth)); });
   let isResizing = $state(false);
 
   function toggleHistoryDrawer() {
     if (!drawerOpen) {
-      drawerWidth = getDefaultDrawerWidth();
       drawerOpen = true;
       return;
     }
@@ -976,7 +1194,7 @@
     <div class="main-scroll">
       <div class="main-content">
         <div class="app-header">
-          <div class="app-header-row">
+          <div class="app-header-row" bind:this={headerRowEl}>
             <button class="history-toggle" onclick={toggleHistoryDrawer} title={`Request History (${navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+H)`}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 {#if drawerOpen}
@@ -989,7 +1207,9 @@
               </svg>
               {drawerOpen ? 'Hide' : 'History'}
             </button>
-            <h1><span style="font-size: 1.75rem; vertical-align: -0.15em">👾</span> EzPostBot</h1>
+            {#if showTitle}
+              <h1><span style="font-size: 1.75rem; vertical-align: -0.15em">👾</span> EzPostBot</h1>
+            {/if}
             <span class="top-controls">
               <label class="toggle-label top-toggle" title="Send request from the backend server, bypassing CORS preflight and browser restrictions">
                 <span class="toggle-switch" class:active={serverSide}>
@@ -1062,14 +1282,23 @@
                     bind:value={header.key}
                     placeholder="Header name"
                     class="header-input key-input"
+                    style="width: {keyColWidth}px"
                   />
-                  <input
-                    type="text"
-                    bind:value={header.value}
-                    placeholder="Value"
-                    class="header-input value-input"
-                    class:secret={header.key.trim().toLowerCase() === 'authorization'}
-                  />
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div class="key-col-resize" onmousedown={startKeyColResize}></div>
+                  <span class="value-input-wrap">
+                    <input
+                      type="text"
+                      bind:value={header.value}
+                      placeholder="Value"
+                      class="header-input value-input"
+                      class:secret={header.key.trim().toLowerCase() === 'authorization'}
+                      class:has-jwt-btn={header.key.trim().toLowerCase() === 'authorization' && isJwt(header.value)}
+                    />
+                    {#if header.key.trim().toLowerCase() === 'authorization' && isJwt(header.value)}
+                      <button class="jwt-badge" onclick={() => openJwtModal(header.value)} title="Decode JWT token">🔑 JWT</button>
+                    {/if}
+                  </span>
                   <button class="remove-btn" onclick={() => removeHeader(i)} title="Remove header">
                     &times;
                   </button>
@@ -1103,7 +1332,10 @@
                     bind:value={param.key}
                     placeholder="Param name"
                     class="header-input key-input"
+                    style="width: {keyColWidth}px"
                   />
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div class="key-col-resize" onmousedown={startKeyColResize}></div>
                   <input
                     type="text"
                     bind:value={param.value}
@@ -1183,7 +1415,10 @@
                       bind:value={field.key}
                       placeholder="Field name"
                       class="header-input key-input"
+                      style="width: {keyColWidth}px"
                     />
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div class="key-col-resize" onmousedown={startKeyColResize}></div>
                     <input
                       type="text"
                       bind:value={field.value}
@@ -1393,6 +1628,85 @@
       </div>
     </div>
   </main>
+
+  {#if jwtModal}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="jwt-overlay" onclick={closeJwtModal} onkeydown={() => {}}>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="jwt-modal" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+        <div class="jwt-modal-header">
+          <span class="jwt-modal-title">🔑 JWT Token</span>
+          <span class="jwt-expiry-badge" class:expired={jwtModal.isExpired} class:valid={!jwtModal.isExpired && jwtModal.expiry}>
+            {#if jwtModal.expiry}
+              {jwtModal.isExpired ? '✕ Expired' : '✓ Not Expired'}
+            {:else}
+              No expiry claim
+            {/if}
+          </span>
+          <button class="jwt-close-btn" onclick={closeJwtModal}>✕</button>
+        </div>
+
+        <div class="jwt-section">
+          <div class="jwt-section-label">Header <span class="jwt-alg">{jwtModal.header?.alg || '?'} · {jwtModal.header?.typ || '?'}</span></div>
+          <div class="jwt-pre-wrapper">
+            <pre class="jwt-pre" style="font-size: {globalFontSize}rem">{jwtModal.header ? JSON.stringify(jwtModal.header, null, 2) : '(unable to decode)'}</pre>
+            <button class="jwt-copy-btn" onclick={() => copyJwtSection(JSON.stringify(jwtModal.header, null, 2), 'header')} title="Copy">
+              {copiedJwtSection === 'header' ? '✓' : '⧉'}
+            </button>
+          </div>
+        </div>
+
+        <div class="jwt-section">
+          <div class="jwt-section-label">Payload</div>
+          <div class="jwt-pre-wrapper">
+            <pre class="jwt-pre jwt-payload" style="font-size: {globalFontSize}rem">{jwtModal.payload ? JSON.stringify(jwtModal.payload, null, 2) : '(unable to decode)'}</pre>
+            <button class="jwt-copy-btn" onclick={() => copyJwtSection(JSON.stringify(jwtModal.payload, null, 2), 'payload')} title="Copy">
+              {copiedJwtSection === 'payload' ? '✓' : '⧉'}
+            </button>
+          </div>
+          {#if jwtModal.issuedAt || jwtModal.expiry || jwtModal.notBefore}
+            <div class="jwt-timestamps">
+              {#if jwtModal.issuedAt}<div><strong>Issued:</strong> {jwtModal.issuedAt.toLocaleString()}</div>{/if}
+              {#if jwtModal.notBefore}<div><strong>Not Before:</strong> {jwtModal.notBefore.toLocaleString()}</div>{/if}
+              {#if jwtModal.expiry}<div><strong>Expires:</strong> {jwtModal.expiry.toLocaleString()}</div>{/if}
+            </div>
+          {/if}
+        </div>
+
+        <div class="jwt-section">
+          <div class="jwt-section-label">Signature</div>
+          <div class="jwt-pre-wrapper">
+            <pre class="jwt-pre jwt-sig" style="font-size: {globalFontSize}rem">{jwtModal.signature || '(empty)'}</pre>
+            <button class="jwt-copy-btn" onclick={() => copyJwtSection(jwtModal.signature || '', 'sig')} title="Copy">
+              {copiedJwtSection === 'sig' ? '✓' : '⧉'}
+            </button>
+          </div>
+          <div class="jwt-verify-row">
+            {#if jwtModal.payload?.iss && ALG_MAP[jwtModal.header?.alg]}
+              <button class="jwt-verify-btn" onclick={verifyJwt} disabled={jwtVerifyStatus === 'loading'}>
+                {#if jwtVerifyStatus === 'loading'}
+                  <span class="spinner"></span> Verifying…
+                {:else}
+                  🔐 Verify Signature
+                {/if}
+              </button>
+            {:else if !jwtModal.payload?.iss}
+              <span class="jwt-verify-note">No "iss" claim — cannot auto-fetch JWKS</span>
+            {:else}
+              <span class="jwt-verify-note">Algorithm "{jwtModal.header?.alg}" not supported for browser verification</span>
+            {/if}
+            {#if jwtVerifyStatus === 'valid'}
+              <span class="jwt-verify-result valid">✓ Signature Valid</span>
+            {:else if jwtVerifyStatus === 'invalid'}
+              <span class="jwt-verify-result invalid">✕ Signature Invalid</span>
+            {:else if jwtVerifyStatus?.startsWith('error:')}
+              <span class="jwt-verify-result error">{jwtVerifyStatus.slice(6)}</span>
+            {/if}
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1474,8 +1788,9 @@
 
   .app-header-row {
     display: flex;
-    align-items: flex-start;
-    gap: 1rem;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: hidden;
   }
 
   .app-header h1 {
@@ -1483,6 +1798,7 @@
     margin: 0 0 0.15rem 0;
     font-weight: 700;
     letter-spacing: -0.02em;
+    white-space: nowrap;
   }
 
 
@@ -1513,7 +1829,7 @@
     align-items: center;
     gap: 0.5rem;
     margin-left: auto;
-    margin-top: 0.15rem;
+    flex-shrink: 0;
   }
 
   .global-font-controls {
@@ -1796,7 +2112,7 @@
 
   .header-row {
     display: flex;
-    gap: 0.4rem;
+    gap: 0.15rem;
     align-items: center;
   }
 
@@ -1817,12 +2133,26 @@
   }
 
   .key-input {
-    flex: 2;
+    flex: none;
     min-width: 0;
   }
 
+  .key-col-resize {
+    width: 4px;
+    align-self: stretch;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .key-col-resize:hover {
+    background: #646cff;
+  }
+
   .value-input {
-    flex: 3;
+    flex: 1;
     min-width: 0;
   }
 
@@ -2572,5 +2902,337 @@
 
   .light-theme .badge {
     color: #333;
+  }
+
+  /* JWT */
+  .value-input-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+  }
+
+  .value-input-wrap .value-input {
+    flex: 1;
+    width: 100%;
+  }
+
+  .value-input.has-jwt-btn {
+    padding-right: 4.2rem;
+  }
+
+  .jwt-badge {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #646cff;
+    color: #fff;
+    border: none;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: background 0.15s;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .jwt-badge:hover {
+    background: #535bf2;
+  }
+
+  .jwt-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .jwt-modal {
+    background: #1e1e38;
+    border: 1px solid #3a3a5a;
+    border-radius: 12px;
+    padding: 1.25rem;
+    width: 85vw;
+    max-width: 900px;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  .jwt-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
+
+  .jwt-modal-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #ddd;
+  }
+
+  .jwt-expiry-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .jwt-expiry-badge.valid {
+    background: rgba(73, 204, 144, 0.15);
+    color: #49cc90;
+  }
+
+  .jwt-expiry-badge.expired {
+    background: rgba(249, 62, 62, 0.15);
+    color: #f93e3e;
+  }
+
+  .jwt-close-btn {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid #3a3a5a;
+    color: #888;
+    font-size: 0.85rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .jwt-close-btn:hover {
+    border-color: #f93e3e;
+    color: #f93e3e;
+  }
+
+  .jwt-section {
+    margin-bottom: 0.8rem;
+  }
+
+  .jwt-pre-wrapper {
+    position: relative;
+  }
+
+  .jwt-pre-wrapper .jwt-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #3a3a5a;
+    border: 1px solid #4a4a6a;
+    color: #aaa;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s;
+    line-height: 1;
+  }
+
+  .jwt-pre-wrapper:hover .jwt-copy-btn {
+    opacity: 1;
+  }
+
+  .jwt-pre-wrapper .jwt-copy-btn:hover {
+    background: #4a4a6a;
+    color: #fff;
+  }
+
+  .jwt-section-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 0.3rem;
+    letter-spacing: 0.04em;
+  }
+
+  .jwt-alg {
+    font-weight: 500;
+    color: #646cff;
+    text-transform: none;
+  }
+
+  .jwt-pre {
+    background: #2a2a4a;
+    border: 1px solid #3a3a5a;
+    border-radius: 8px;
+    padding: 0.7rem;
+    margin: 0;
+    font-size: 0.72rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    overflow-x: auto;
+    color: #ccc;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .jwt-timestamps {
+    font-size: 0.65rem;
+    color: #999;
+    margin-top: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .jwt-sig {
+    color: #888;
+    font-size: 0.65rem;
+  }
+
+  .jwt-verify-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .jwt-verify-btn {
+    background: #646cff;
+    color: #fff;
+    border: none;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.35rem 0.7rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .jwt-verify-btn:hover:not(:disabled) {
+    background: #535bf2;
+  }
+
+  .jwt-verify-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .jwt-verify-note {
+    font-size: 0.6rem;
+    color: #666;
+    font-style: italic;
+  }
+
+  .jwt-verify-result {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .jwt-verify-result.valid {
+    background: rgba(73, 204, 144, 0.15);
+    color: #49cc90;
+  }
+
+  .jwt-verify-result.invalid {
+    background: rgba(249, 62, 62, 0.15);
+    color: #f93e3e;
+  }
+
+  .jwt-verify-result.error {
+    background: rgba(255, 180, 50, 0.15);
+    color: #e0a030;
+    font-weight: 500;
+    font-size: 0.6rem;
+  }
+
+  /* JWT light mode */
+  .light-theme .jwt-modal {
+    background: #f0f0f8;
+    border-color: #a0a0b4;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  }
+
+  .light-theme .jwt-modal-title {
+    color: #222;
+  }
+
+  .light-theme .jwt-close-btn {
+    border-color: #a0a0b4;
+    color: #666;
+  }
+
+  .light-theme .jwt-close-btn:hover {
+    border-color: #f93e3e;
+    color: #f93e3e;
+  }
+
+  .light-theme .jwt-section-label {
+    color: #555;
+  }
+
+  .light-theme .jwt-pre {
+    background: #e2e2ee;
+    border-color: #a0a0b4;
+    color: #222;
+  }
+
+  .light-theme .jwt-copy-btn {
+    background: #ccccd8;
+    border-color: #a0a0b4;
+    color: #444;
+  }
+
+  .light-theme .jwt-copy-btn:hover {
+    background: #b8b8c8;
+    color: #111;
+  }
+
+  .light-theme .jwt-timestamps {
+    color: #555;
+  }
+
+  .light-theme .jwt-sig {
+    color: #666;
+  }
+
+  .light-theme .jwt-verify-note {
+    color: #888;
+  }
+
+  .light-theme .jwt-verify-result.valid {
+    background: rgba(30, 140, 80, 0.15);
+    color: #1a7a45;
+  }
+
+  .light-theme .jwt-verify-result.invalid {
+    background: rgba(200, 30, 30, 0.15);
+    color: #b91c1c;
+  }
+
+  .light-theme .jwt-verify-result.error {
+    background: rgba(200, 140, 20, 0.15);
+    color: #9a6c10;
+  }
+
+  .light-theme .jwt-expiry-badge.valid {
+    background: rgba(30, 140, 80, 0.15);
+    color: #1a7a45;
+  }
+
+  .light-theme .jwt-expiry-badge.expired {
+    background: rgba(200, 30, 30, 0.15);
+    color: #b91c1c;
   }
 </style>
