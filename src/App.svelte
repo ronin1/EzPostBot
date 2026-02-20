@@ -1636,6 +1636,7 @@
       <div class="jwt-modal" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
         <div class="jwt-modal-header">
           <span class="jwt-modal-title">🔑 JWT Token</span>
+          <span class="jwt-size-badge">{jwtModal.rawToken.length} chars · {new Blob([jwtModal.rawToken]).size} bytes</span>
           <span class="jwt-expiry-badge" class:expired={jwtModal.isExpired} class:valid={!jwtModal.isExpired && jwtModal.expiry}>
             {#if jwtModal.expiry}
               {jwtModal.isExpired ? '✕ Expired' : '✓ Not Expired'}
@@ -2982,6 +2983,16 @@
     color: #ddd;
   }
 
+  .jwt-size-badge {
+    font-size: 0.62rem;
+    font-weight: 500;
+    color: #888;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid #3a3a5a;
+    border-radius: 5px;
+  }
+
   .jwt-expiry-badge {
     font-size: 0.65rem;
     font-weight: 600;
@@ -3166,6 +3177,11 @@
 
   .light-theme .jwt-modal-title {
     color: #222;
+  }
+
+  .light-theme .jwt-size-badge {
+    color: #555;
+    border-color: #a0a0b4;
   }
 
   .light-theme .jwt-close-btn {
